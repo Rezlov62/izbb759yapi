@@ -1,0 +1,1851 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>İzmir KentVizyon - Sistem ve Kullanıcı Yönetim Paneli</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="binalar_data.js"></script>
+    <script src="auth_security.js"></script>
+    <script>
+        // ── SİSTEM YÖNETİCİSİ YETKİ KONTROLÜ ───────────────────────────────────
+        (function() {
+            const session = window.AuthSecurity ? window.AuthSecurity.unlockAndLoadGeoJSON() : null;
+            if (!session) {
+                window.location.replace('giris.html');
+                return;
+            }
+            const canAccess = window.AuthSecurity.hasPermission
+                ? window.AuthSecurity.hasPermission('canAccessAdminPanel')
+                : (session.role === 'yonetici');
+            if (!canAccess) {
+                if (window.AuthSecurity && window.AuthSecurity.logAudit) {
+                    window.AuthSecurity.logAudit({
+                        category: 'SECURITY',
+                        action: 'Yetkisiz Yönetici Paneli Erişim Denemesi',
+                        target: 'yonetici.html',
+                        details: `${session.displayName || session.username} (${session.role}) yönetici paneline erişmeye çalıştı, haritaya yönlendirildi.`,
+                        status: 'danger'
+                    });
+                }
+                window.location.replace('v0001.html');
+                return;
+            }
+            window.__ACTIVE_AUTH_SESSION = session;
+        })();
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .tab-btn-active {
+            background-color: #4f46e5;
+            color: #ffffff;
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+        }
+        .tab-btn-inactive {
+            color: #94a3b8;
+        }
+        .tab-btn-inactive:hover {
+            background-color: rgba(255, 255, 255, 0.06);
+            color: #f8fafc;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 h-screen flex flex-col overflow-hidden">
+
+    <!-- ÜST SİSTEM YÖNETİCİSİ BAR (2 SATIRLI TAM DUYARLI / RESPONSIVE MİMARİ) -->
+    <header class="bg-slate-900 text-white border-b border-slate-800 shrink-0 z-30 shadow-md">
+        <!-- 1. Üst Satır: Marka / Başlık ve Sağ Eylemler -->
+        <div class="px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
+            <div class="flex items-center space-x-3 min-w-0">
+                <div class="bg-indigo-600 p-2 rounded-xl text-white shadow-lg shadow-indigo-600/30 shrink-0">
+                    <i class="fa-solid fa-users-gear text-base"></i>
+                </div>
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <h1 class="font-bold text-sm sm:text-base tracking-wide text-white leading-tight whitespace-nowrap">İzmir KentVizyon</h1>
+                        <span class="whitespace-nowrap bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Sistem & Kullanıcı Yönetimi</span>
+                    </div>
+                    <p class="hidden lg:block text-[11px] text-slate-400 truncate">Kullanıcı Hesapları, Yetki Matrisi, İşlem Kayıtları (Audit Log) ve SQLite Veritabanı Merkezi</p>
+                </div>
+            </div>
+
+            <!-- Sağ Hızlı Eylemler -->
+            <div class="flex items-center space-x-2 shrink-0">
+                <button type="button" onclick="openDbInspectorModal()" id="db-status-badge" class="whitespace-nowrap shrink-0 bg-slate-800 hover:bg-indigo-950/80 border border-slate-700 hover:border-indigo-500/50 text-slate-200 px-3 py-1.5 rounded-xl text-[11px] font-semibold transition flex items-center gap-2 cursor-pointer shadow-xs" title="SQLite Veritabanı ve Yerel Önbellek Tablolarını İncelemek İçin Tıklayın">
+                    <span id="db-status-dot" class="w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
+                    <i class="fa-solid fa-database text-indigo-400"></i>
+                    <span id="db-status-text">SQLite / Yerel Önbellek</span>
+                    <i class="fa-solid fa-up-right-from-square text-[9px] text-slate-400"></i>
+                </button>
+                <a href="v0001.html" class="whitespace-nowrap shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 px-3 py-1.5 rounded-xl text-[11px] font-semibold transition flex items-center gap-1.5 shadow-xs" title="CBS Harita Ekranına Dön">
+                    <i class="fa-solid fa-map-location-dot text-teal-400"></i>
+                    <span>CBS Harita Ekranı</span>
+                </a>
+                <div class="hidden sm:block h-5 w-px bg-slate-800"></div>
+                <div class="hidden sm:flex items-center gap-2 bg-slate-800/80 border border-slate-700 px-3 py-1 rounded-xl whitespace-nowrap shrink-0">
+                    <i class="fa-solid fa-user-shield text-emerald-400 text-xs"></i>
+                    <div class="text-left">
+                        <div id="admin-user-label" class="text-[11px] font-bold text-white leading-tight">Sistem Yöneticisi (Admin)</div>
+                        <div class="text-[9px] text-emerald-400 font-medium leading-tight">Tek Admin</div>
+                    </div>
+                </div>
+                <button id="btn-logout" class="shrink-0 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 p-2 rounded-xl text-xs transition cursor-pointer" title="Güvenli Çıkış">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- 2. Alt Satır: Sekme Gezinme Çubuğu (Ribbon Tabs - Taşma Yapmaz, Yatay Kaydırılabilir) -->
+        <div class="bg-slate-950 px-4 sm:px-6 py-1.5 border-t border-slate-800/90 flex items-center justify-between gap-2 overflow-x-auto">
+            <nav class="flex items-center space-x-1.5 min-w-0">
+                <button onclick="switchAdminTab('dashboard')" id="tab-btn-dashboard" class="tab-btn-active whitespace-nowrap shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 cursor-pointer">
+                    <i class="fa-solid fa-gauge-high"></i>
+                    <span>Genel İzleme & Kullanıcı Özeti</span>
+                </button>
+                <button onclick="switchAdminTab('audit')" id="tab-btn-audit" class="tab-btn-inactive whitespace-nowrap shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 cursor-pointer">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span>Kullanıcı İşlem Geçmişi (Loglar)</span>
+                    <span id="badge-total-logs" class="bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 px-1.5 py-0.2 rounded text-[10px] font-bold">0</span>
+                </button>
+                <button onclick="switchAdminTab('users')" id="tab-btn-users" class="tab-btn-inactive whitespace-nowrap shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 cursor-pointer">
+                    <i class="fa-solid fa-user-plus"></i>
+                    <span>Kullanıcı Hesapları</span>
+                    <span id="badge-total-users" class="bg-slate-700 text-slate-200 px-1.5 py-0.2 rounded text-[10px] font-bold">0</span>
+                </button>
+                <button onclick="switchAdminTab('permissions')" id="tab-btn-permissions" class="tab-btn-inactive whitespace-nowrap shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 cursor-pointer">
+                    <i class="fa-solid fa-key"></i>
+                    <span>Kullanıcı Yetki Matrisi</span>
+                </button>
+            </nav>
+
+            <button type="button" onclick="openDbInspectorModal()" class="whitespace-nowrap shrink-0 text-[11px] font-semibold text-indigo-300 hover:text-white bg-indigo-950/60 hover:bg-indigo-900/70 border border-indigo-500/30 px-3 py-1 rounded-lg transition flex items-center gap-1.5 cursor-pointer">
+                <i class="fa-solid fa-table-list text-indigo-400"></i>
+                <span>Veritabanı & Önbellek Tabloları</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- ANA İÇERİK ALANI -->
+    <main class="flex-1 overflow-hidden relative flex flex-col">
+
+        <!-- =================================================================== -->
+        <!-- SEKME 1: GENEL İZLEME & KULLANICI AKTİVİTE ÖZETİ                    -->
+        <!-- =================================================================== -->
+        <section id="tab-panel-dashboard" class="flex-1 overflow-y-auto p-6 space-y-6">
+            <!-- Üst Özet Kartları -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Tanımlı Kullanıcı</p>
+                        <p id="stat-users-total" class="text-2xl font-extrabold text-slate-800 mt-1">0</p>
+                        <p id="stat-users-active-sub" class="text-[11px] text-emerald-600 font-medium mt-0.5">0 Aktif Hesap</p>
+                    </div>
+                    <div class="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-users"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Toplam İşlem Kaydı</p>
+                        <p id="stat-logs-total" class="text-2xl font-extrabold text-blue-600 mt-1">0</p>
+                        <p class="text-[11px] text-slate-500 mt-0.5">Denetim Günlüğü (Audit)</p>
+                    </div>
+                    <div class="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-clipboard-list"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Bugünkü İşlemler</p>
+                        <p id="stat-logs-today" class="text-2xl font-extrabold text-teal-600 mt-1">0</p>
+                        <p class="text-[11px] text-slate-500 mt-0.5">Son 24 Saat Aktivitesi</p>
+                    </div>
+                    <div class="w-11 h-11 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-calendar-check"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Veri & Evrak İşlemi</p>
+                        <p id="stat-data-ops" class="text-2xl font-extrabold text-amber-600 mt-1">0</p>
+                        <p class="text-[11px] text-slate-500 mt-0.5">Aşama, PDF ve Tebligat</p>
+                    </div>
+                    <div class="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-file-signature"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Güvenlik Uyarıları</p>
+                        <p id="stat-security-alerts" class="text-2xl font-extrabold text-rose-600 mt-1">0</p>
+                        <p class="text-[11px] text-slate-500 mt-0.5">Hatalı Şifre / Yetkisiz Deneme</p>
+                    </div>
+                    <div class="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-shield-virus"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Kullanıcı Bazlı Aktivite ve İşlem Özeti Tablosu -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/70">
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-user-clock text-indigo-600"></i>
+                            <span>Kullanıcı Bazlı İşlem Dağılımı ve Oturum Takip Tablosu</span>
+                        </h2>
+                        <p class="text-xs text-slate-500">Hangi kullanıcının en son ne zaman giriş yaptığı ve sistemde kaç işlem gerçekleştirdiği</p>
+                    </div>
+                    <button onclick="switchAdminTab('users')" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 self-start sm:self-auto shadow-xs">
+                        <i class="fa-solid fa-user-plus"></i>
+                        <span>Yeni Kullanıcı Ekle</span>
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100/90 text-slate-600 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
+                                <th class="py-3 px-4">Kullanıcı / Ad Soyad</th>
+                                <th class="py-3 px-3">Birim & Rol</th>
+                                <th class="py-3 px-3 text-center">Hesap Durumu</th>
+                                <th class="py-3 px-3">Son Giriş Tarihi</th>
+                                <th class="py-3 px-3 text-center">Giriş/Çıkış</th>
+                                <th class="py-3 px-3 text-center">Aşama Güncelleme</th>
+                                <th class="py-3 px-3 text-center">PDF İşlemleri</th>
+                                <th class="py-3 px-3 text-center">Tebligat</th>
+                                <th class="py-3 px-3 text-center">Sorgulama</th>
+                                <th class="py-3 px-3 text-center">Toplam İşlem</th>
+                                <th class="py-3 px-4 text-right">Detay / Yetki</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboard-user-stats-tbody" class="divide-y divide-slate-200 text-xs"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Alt İki Kolon: Son Kullanıcı İşlemleri & Güvenlik Kayıtları -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                    <div class="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                            <i class="fa-solid fa-bolt text-amber-500"></i>
+                            <span>Son Gerçekleşen Kullanıcı İşlemleri (Canlı Akış)</span>
+                        </h3>
+                        <button onclick="switchAdminTab('audit')" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
+                            Tüm İşlem Geçmişini Gör <i class="fa-solid fa-arrow-right ml-1"></i>
+                        </button>
+                    </div>
+                    <div id="dashboard-recent-logs" class="divide-y divide-slate-100 max-h-80 overflow-y-auto"></div>
+                </div>
+
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                    <div class="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between bg-rose-50/60">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-rose-800 flex items-center gap-2">
+                            <i class="fa-solid fa-triangle-exclamation text-rose-600"></i>
+                            <span>Güvenlik & Yetkisiz Deneme Kayıtları</span>
+                        </h3>
+                        <button onclick="filterLogsBySecurity()" class="text-xs font-semibold text-rose-700 hover:underline">
+                            Tümünü İncele
+                        </button>
+                    </div>
+                    <div id="dashboard-security-logs" class="divide-y divide-slate-100 max-h-80 overflow-y-auto p-3 space-y-2"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- =================================================================== -->
+        <!-- SEKME 2: KULLANICI İŞLEM GEÇMİŞİ (DENETİM GÜNLÜĞÜ / AUDIT LOG)      -->
+        <!-- =================================================================== -->
+        <section id="tab-panel-audit" class="hidden flex-1 overflow-hidden flex flex-col p-6">
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col overflow-hidden">
+                <!-- Filtre Barı -->
+                <div class="p-4 bg-slate-50 border-b border-slate-200 space-y-3 shrink-0">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                            <h2 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <i class="fa-solid fa-clock-rotate-left text-indigo-600"></i>
+                                <span>Kullanıcı İşlem Geçmişi ve Denetim Günlüğü (Audit Log)</span>
+                            </h2>
+                            <p class="text-xs text-slate-500">Hangi kullanıcının, hangi tarihte ve saatte, hangi kayıtta ne işlem yaptığını detaylı olarak inceleyin</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="resetAuditFilters()" class="px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-rotate-left"></i>
+                                <span>Filtreleri Sıfırla</span>
+                            </button>
+                            <button onclick="handleClearAuditLogs()" class="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-trash-can"></i>
+                                <span>Log Kayıtlarını Temizle</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-6 gap-2.5 pt-1">
+                        <div class="md:col-span-2 relative">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                            <input type="text" id="audit-search-input" placeholder="Kullanıcı adı, MAKS no, işlem açıklaması ara..." class="w-full pl-8 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <select id="audit-filter-user" class="w-full py-2 px-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500">
+                                <option value="all">Tüm Kullanıcılar</option>
+                            </select>
+                        </div>
+                        <div>
+                            <select id="audit-filter-category" class="w-full py-2 px-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500">
+                                <option value="all">Tüm İşlem Türleri</option>
+                                <option value="AUTH">Oturum (Giriş / Çıkış)</option>
+                                <option value="STAGE_UPDATE">Süreç Aşaması Güncelleme</option>
+                                <option value="PDF_UPLOAD">PDF Evrak Yükleme / Değiştirme</option>
+                                <option value="PDF_VIEW">PDF Evrak Görüntüleme</option>
+                                <option value="TEBLIGAT">Tebligat Gönderimi</option>
+                                <option value="BUILDING_VIEW">Yapı Sorgulama / İnceleme</option>
+                                <option value="USER_MGMT">Kullanıcı & Yetki Yönetimi</option>
+                                <option value="SECURITY">Güvenlik & Yetkisiz Denemeler</option>
+                            </select>
+                        </div>
+                        <div>
+                            <input type="date" id="audit-filter-start" title="Başlangıç Tarihi" class="w-full py-2 px-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <input type="date" id="audit-filter-end" title="Bitiş Tarihi" class="w-full py-2 px-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tablo -->
+                <div class="flex-1 overflow-y-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-100 text-slate-600 text-[11px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 shadow-xs">
+                            <tr>
+                                <th class="py-3 px-4 w-44">Tarih & Saat</th>
+                                <th class="py-3 px-4 w-48">Kullanıcı</th>
+                                <th class="py-3 px-3 w-44">İşlem Türü</th>
+                                <th class="py-3 px-3 w-48">İşlem Başlığı</th>
+                                <th class="py-3 px-3 w-44">İlgili Hedef / Kayıt</th>
+                                <th class="py-3 px-4">İşlem Detayı</th>
+                                <th class="py-3 px-3 text-center w-28">Durum</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-logs-tbody" class="divide-y divide-slate-200 text-xs"></tbody>
+                    </table>
+                </div>
+
+                <!-- Alt Bilgi Barı -->
+                <div class="px-5 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
+                    <span>Gösterilen İşlem Kaydı: <strong id="audit-filtered-count" class="text-slate-800">0</strong></span>
+                    <span class="text-[11px] text-slate-400">Tüm kullanıcı hareketleri tarih ve saniye bazında otomatik olarak kaydedilir</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- =================================================================== -->
+        <!-- SEKME 3: KULLANICI HESAPLARI YÖNETİMİ                               -->
+        <!-- =================================================================== -->
+        <section id="tab-panel-users" class="hidden flex-1 overflow-y-auto p-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- SOL 2 KOLON: Kullanıcı Listesi -->
+                <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                    <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
+                        <div>
+                            <h2 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <i class="fa-solid fa-users text-indigo-600"></i>
+                                <span>Kayıtlı Sistem Kullanıcıları</span>
+                            </h2>
+                            <p class="text-xs text-slate-500">Kullanıcıların şifresini, rolünü, birimini güncelleyebilir veya hesabı askıya alabilirsiniz</p>
+                        </div>
+                        <button onclick="resetUserFormForNew()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>Yeni Kullanıcı</span>
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto flex-1">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-600 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
+                                    <th class="py-3 px-4">Kullanıcı Adı</th>
+                                    <th class="py-3 px-3">Ad Soyad / Unvan</th>
+                                    <th class="py-3 px-3">Birim / Müdürlük</th>
+                                    <th class="py-3 px-3">Rol</th>
+                                    <th class="py-3 px-3 text-center">Durum</th>
+                                    <th class="py-3 px-3">Son Giriş</th>
+                                    <th class="py-3 px-4 text-right">İşlemler</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-list-tbody" class="divide-y divide-slate-200 text-xs"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- SAĞ KOLON: Yeni Kullanıcı Ekle / Düzenle Formu -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 h-fit">
+                    <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                                <i id="user-form-icon" class="fa-solid fa-user-plus"></i>
+                            </div>
+                            <div>
+                                <h3 id="user-form-title" class="text-sm font-bold text-slate-800">Yeni Kullanıcı Oluştur</h3>
+                                <p id="user-form-subtitle" class="text-[11px] text-slate-500">AES-256 şifreli veri erişim anahtarı otomatik tanımlanır</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form id="admin-user-form" class="space-y-3.5">
+                        <input type="hidden" id="uf-mode" value="create">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Kullanıcı Adı (Giriş ID)</label>
+                            <input type="text" id="uf-username" required placeholder="Örn: ahmet.yilmaz" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500 focus:bg-white">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Ad Soyad / Unvan</label>
+                            <input type="text" id="uf-displayname" required placeholder="Örn: Ahmet Yılmaz (Şehir Plancısı)" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500 focus:bg-white">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Birim / Şube Müdürlüğü</label>
+                            <input type="text" id="uf-department" required placeholder="Örn: Kentsel Dönüşüm Şube Md." class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500 focus:bg-white">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">Kullanıcı Rolü</label>
+                                <select id="uf-role" class="w-full px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500 focus:bg-white">
+                                    <option value="goruntuleyen">Görüntüleyen (Salt Okunur)</option>
+                                    <option value="duzenleyen">Düzenleyen (Aşama & PDF Yetkili)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">Hesap Durumu</label>
+                                <select id="uf-status" class="w-full px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500 focus:bg-white">
+                                    <option value="aktif">Aktif (Giriş Yapabilir)</option>
+                                    <option value="pasif">Askıya Alındı (Pasif)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label id="uf-password-label" class="block text-xs font-semibold text-slate-700 mb-1">Giriş Şifresi</label>
+                            <input type="password" id="uf-password" placeholder="En az 4 karakterli şifre..." class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500 focus:bg-white">
+                            <p id="uf-password-hint" class="text-[10px] text-slate-400 mt-1">Belirlediğiniz şifre PBKDF2-SHA256 ile şifrelenerek kaydedilir.</p>
+                        </div>
+
+                        <div class="pt-2 flex items-center gap-2">
+                            <button type="submit" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-xl text-xs shadow transition flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-check"></i>
+                                <span id="uf-submit-text">Kullanıcıyı Oluştur</span>
+                            </button>
+                            <button type="button" onclick="resetUserFormForNew()" class="px-3 py-2.5 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-100 text-xs font-semibold transition">
+                                Temizle
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- =================================================================== -->
+        <!-- SEKME 4: KULLANICI YETKİ MATRİSİ                                    -->
+        <!-- =================================================================== -->
+        <section id="tab-panel-permissions" class="hidden flex-1 overflow-y-auto p-6 space-y-6">
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/70">
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-key text-indigo-600"></i>
+                            <span>Kullanıcı Yetki ve Erişim Kontrol Matrisi</span>
+                        </h2>
+                        <p class="text-xs text-slate-500">Her kullanıcının CBS Harita Ekranı ve sistem üzerinde hangi işlemleri yapabileceğini anlık olarak açıp kapatabilirsiniz</p>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
+                                <th class="py-3.5 px-4">Kullanıcı</th>
+                                <th class="py-3.5 px-3">Atanmış Rol</th>
+                                <th class="py-3.5 px-3 text-center">
+                                    <div>Süreç Aşaması</div>
+                                    <div class="text-[9px] font-normal text-slate-400">Ekleme / Düzenleme</div>
+                                </th>
+                                <th class="py-3.5 px-3 text-center">
+                                    <div>PDF Evrak</div>
+                                    <div class="text-[9px] font-normal text-slate-400">Yükleme / Değiştirme</div>
+                                </th>
+                                <th class="py-3.5 px-3 text-center">
+                                    <div>Tebligat İşlemi</div>
+                                    <div class="text-[9px] font-normal text-slate-400">Tekil / Toplu Gönderim</div>
+                                </th>
+                                <th class="py-3.5 px-3 text-center">
+                                    <div>Özet & Analiz</div>
+                                    <div class="text-[9px] font-normal text-slate-400">İstatistik Paneli</div>
+                                </th>
+                                <th class="py-3.5 px-3 text-center">
+                                    <div>PDF Görüntüleme</div>
+                                    <div class="text-[9px] font-normal text-slate-400">Evrak Okuma / İndirme</div>
+                                </th>
+                                <th class="py-3.5 px-3 text-center">
+                                    <div>Yönetici Paneli</div>
+                                    <div class="text-[9px] font-normal text-slate-400">Kullanıcı & Log Erişimi</div>
+                                </th>
+                                <th class="py-3.5 px-4 text-right">Hızlı İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody id="permissions-matrix-tbody" class="divide-y divide-slate-200 text-xs"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- =================================================================== -->
+    <!-- KULLANICI DETAYLI İŞLEM GEÇMİŞİ VE AKTİVİTE KARNESİ MODALI           -->
+    <!-- =================================================================== -->
+    <div id="user-history-modal" class="hidden fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden">
+            <!-- Modal Üst Kimlik Başlığı -->
+            <div class="bg-slate-900 text-white px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 shrink-0">
+                <div class="flex items-center gap-3.5">
+                    <div class="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 flex items-center justify-center text-lg font-bold shrink-0">
+                        <i class="fa-solid fa-user-clock"></i>
+                    </div>
+                    <div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h3 id="uhm-displayname" class="text-base font-extrabold text-white">Kullanıcı Adı</h3>
+                            <span id="uhm-username" class="text-xs font-mono text-indigo-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">@kullanici</span>
+                            <span id="uhm-role-badge" class="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">Rol</span>
+                            <span id="uhm-status-badge" class="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">Aktif</span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-4 text-[11px] text-slate-400 mt-1">
+                            <span><i class="fa-solid fa-building-user mr-1 text-slate-500"></i>Birim: <strong id="uhm-department" class="text-slate-200">-</strong></span>
+                            <span><i class="fa-solid fa-right-to-bracket mr-1 text-teal-400"></i>Son Giriş: <strong id="uhm-last-login" class="text-teal-300 font-mono">-</strong></span>
+                            <span id="uhm-perms-summary" class="text-slate-300"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 self-end sm:self-center">
+                    <button id="uhm-btn-edit-user" type="button" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-user-pen text-indigo-400"></i>
+                        <span>Hesabı Düzenle</span>
+                    </button>
+                    <button onclick="closeUserDetailModal()" type="button" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white border border-slate-700 flex items-center justify-center transition" title="Kapat (ESC)">
+                        <i class="fa-solid fa-xmark text-sm"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Modal İçi Hızlı Kategori Kartları (Tıklanabilir Filtre) -->
+            <div class="px-6 py-3.5 bg-slate-100/80 border-b border-slate-200 shrink-0">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                    <button type="button" onclick="setUhmCategoryFilter('all')" class="bg-white hover:bg-indigo-50/60 p-2.5 rounded-xl border border-slate-200 text-left transition shadow-2xs">
+                        <div class="text-[10px] font-bold uppercase text-slate-400">Toplam İşlem</div>
+                        <div id="uhm-stat-total" class="text-lg font-extrabold text-slate-900 mt-0.5">0</div>
+                    </button>
+                    <button type="button" onclick="setUhmCategoryFilter('STAGE_UPDATE')" class="bg-white hover:bg-indigo-50/60 p-2.5 rounded-xl border border-slate-200 text-left transition shadow-2xs">
+                        <div class="text-[10px] font-bold uppercase text-indigo-600">Aşama Kontrol/Kayıt</div>
+                        <div id="uhm-stat-stage" class="text-lg font-extrabold text-indigo-700 mt-0.5">0</div>
+                    </button>
+                    <button type="button" onclick="setUhmCategoryFilter('PDF_ALL')" class="bg-white hover:bg-purple-50/60 p-2.5 rounded-xl border border-slate-200 text-left transition shadow-2xs">
+                        <div class="text-[10px] font-bold uppercase text-purple-600">PDF Ekleme / Okuma</div>
+                        <div id="uhm-stat-pdf" class="text-lg font-extrabold text-purple-700 mt-0.5">0</div>
+                    </button>
+                    <button type="button" onclick="setUhmCategoryFilter('TEBLIGAT')" class="bg-white hover:bg-amber-50/60 p-2.5 rounded-xl border border-slate-200 text-left transition shadow-2xs">
+                        <div class="text-[10px] font-bold uppercase text-amber-600">Tebligat İşlemi</div>
+                        <div id="uhm-stat-tebligat" class="text-lg font-extrabold text-amber-700 mt-0.5">0</div>
+                    </button>
+                    <button type="button" onclick="setUhmCategoryFilter('BUILDING_VIEW')" class="bg-white hover:bg-teal-50/60 p-2.5 rounded-xl border border-slate-200 text-left transition shadow-2xs">
+                        <div class="text-[10px] font-bold uppercase text-teal-600">Yapı İnceleme</div>
+                        <div id="uhm-stat-view" class="text-lg font-extrabold text-teal-700 mt-0.5">0</div>
+                    </button>
+                    <button type="button" onclick="setUhmCategoryFilter('AUTH')" class="bg-white hover:bg-sky-50/60 p-2.5 rounded-xl border border-slate-200 text-left transition shadow-2xs">
+                        <div class="text-[10px] font-bold uppercase text-sky-600">Giriş / Çıkış</div>
+                        <div id="uhm-stat-auth" class="text-lg font-extrabold text-sky-700 mt-0.5">0</div>
+                    </button>
+                </div>
+
+                <!-- Arama ve Tarih Filtre Barı -->
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-2.5 mt-3">
+                    <div class="md:col-span-2 relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                        <input type="text" id="uhm-search-input" placeholder="Bu kullanıcının işlemlerinde MAKS no, ilçe, PDF adı, açıklama ara..." class="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <select id="uhm-filter-category" class="w-full py-1.5 px-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500">
+                            <option value="all">Tüm İşlem Kategorileri</option>
+                            <option value="STAGE_UPDATE">Süreç Aşaması Güncelleme / Ekleme</option>
+                            <option value="PDF_ALL">Tüm PDF İşlemleri (Yükleme + Görüntüleme)</option>
+                            <option value="PDF_UPLOAD">Sadece PDF Yükleme / Değiştirme</option>
+                            <option value="PDF_VIEW">Sadece PDF Görüntüleme</option>
+                            <option value="TEBLIGAT">Tebligat Gönderimleri</option>
+                            <option value="BUILDING_VIEW">Yapı Sorgulama & İnceleme</option>
+                            <option value="AUTH">Sisteme Giriş & Çıkış</option>
+                            <option value="USER_MGMT">Kullanıcı & Yetki İşlemleri</option>
+                            <option value="SECURITY">Güvenlik & Yetkisiz Denemeler</option>
+                        </select>
+                    </div>
+                    <div>
+                        <input type="date" id="uhm-filter-start" title="Başlangıç Tarihi" class="w-full py-1.5 px-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <input type="date" id="uhm-filter-end" title="Bitiş Tarihi" class="w-full py-1.5 px-2.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500">
+                        <button type="button" onclick="resetUhmFilters()" class="px-2.5 py-1.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 text-xs font-semibold shrink-0" title="Filtreleri Sıfırla">
+                            <i class="fa-solid fa-rotate-left"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Kullanıcının Kronolojik Detaylı İşlem Tablosu -->
+            <div class="flex-1 overflow-y-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead class="bg-slate-100 text-slate-600 text-[11px] font-bold uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200 shadow-xs">
+                        <tr>
+                            <th class="py-3 px-4 w-44">Tarih & Saat</th>
+                            <th class="py-3 px-3 w-44">Kategori</th>
+                            <th class="py-3 px-3 w-48">Yapılan İşlem</th>
+                            <th class="py-3 px-3 w-48">İlgili Yapı / Hedef</th>
+                            <th class="py-3 px-4">Detaylı İşlem Açıklaması</th>
+                            <th class="py-3 px-3 text-center w-28">Durum</th>
+                        </tr>
+                    </thead>
+                    <tbody id="uhm-logs-tbody" class="divide-y divide-slate-200 text-xs"></tbody>
+                </table>
+            </div>
+
+            <!-- Modal Alt Bar -->
+            <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
+                <span>Listelenen İşlem Sayısı: <strong id="uhm-filtered-count" class="text-slate-900">0</strong></span>
+                <button type="button" onclick="closeUserDetailModal()" class="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-1.5 rounded-xl text-xs transition">
+                    Kapat
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ======================================================================= -->
+    <!-- SQLite VERİTABANI VE YEREL ÖNBELLEK DENETLEYİCİSİ MODALI                 -->
+    <!-- ======================================================================= -->
+    <div id="db-inspector-modal" class="fixed inset-0 bg-slate-950/75 backdrop-blur-xs z-[2200] hidden flex items-center justify-center p-3 sm:p-5">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
+            <!-- Modal Üst Başlık -->
+            <div class="bg-slate-900 text-white px-5 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-3 shrink-0 border-b border-slate-800">
+                <div class="flex items-center gap-3.5">
+                    <div class="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-lg font-bold shadow-lg shadow-indigo-600/30 border border-indigo-400/30">
+                        <i class="fa-solid fa-database"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2.5 flex-wrap">
+                            <h3 class="font-bold text-sm sm:text-base text-white">SQLite Veritabanı & Yerel Önbellek Merkezi</h3>
+                            <span id="dbm-conn-badge" class="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                Bağlantı Kontrol Ediliyor...
+                            </span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-0.5">
+                            İlişkisel SQL Tabloları (<code class="text-indigo-300">kentvizyon.db</code>) ve Tarayıcı Yerel Önbelleği (<code class="text-teal-300">localStorage</code> + <code class="text-purple-300">IndexedDB</code>) Canlı Görünümü
+                        </p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="triggerManualDbSync()" id="btn-manual-db-sync" class="whitespace-nowrap bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer">
+                        <i class="fa-solid fa-arrows-rotate"></i>
+                        <span>Şimdi Senkronize Et</span>
+                    </button>
+                    <button type="button" onclick="closeDbInspectorModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white p-2 rounded-xl text-sm transition cursor-pointer" title="Kapat">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Üst Özet İstatistik Kartları -->
+            <div class="bg-slate-50 px-5 sm:px-6 py-3.5 border-b border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-3 shrink-0">
+                <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase">buildings (CBS Yapılar)</div>
+                    <div class="text-lg font-extrabold text-slate-900 mt-0.5" id="dbm-stat-buildings">759</div>
+                    <div class="text-[10px] text-indigo-600 font-semibold" id="dbm-stat-modified">Güncellenen: 0 yapı</div>
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase">users & permissions</div>
+                    <div class="text-lg font-extrabold text-slate-900 mt-0.5" id="dbm-stat-users">3</div>
+                    <div class="text-[10px] text-emerald-600 font-semibold">Tek Admin + Roller</div>
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase">audit_logs (İşlemler)</div>
+                    <div class="text-lg font-extrabold text-slate-900 mt-0.5" id="dbm-stat-logs">0</div>
+                    <div class="text-[10px] text-slate-500">Kronolojik Denetim Kaydı</div>
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase">pdf_documents (IDB/SQL)</div>
+                    <div class="text-lg font-extrabold text-slate-900 mt-0.5" id="dbm-stat-pdfs">0</div>
+                    <div class="text-[10px] text-purple-600 font-semibold">Kayıtlı PDF Evrak</div>
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs col-span-2 sm:col-span-1">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase">Depolama Boyutu</div>
+                    <div class="text-sm font-extrabold text-slate-900 mt-1" id="dbm-stat-size">SQLite: ~184 KB</div>
+                    <div class="text-[10px] text-teal-600 font-semibold" id="dbm-stat-cache-size">Önbellek: 0 KB</div>
+                </div>
+            </div>
+
+            <!-- Alt Sekme Çubuğu -->
+            <div class="bg-slate-100 px-5 sm:px-6 pt-2.5 border-b border-slate-200 flex items-center gap-2 overflow-x-auto shrink-0">
+                <button type="button" onclick="switchDbModalTab('tables')" id="dbm-tab-btn-tables" class="whitespace-nowrap px-4 py-2 rounded-t-xl text-xs font-bold bg-white text-indigo-700 border border-b-0 border-slate-200 cursor-pointer flex items-center gap-1.5">
+                    <i class="fa-solid fa-table"></i>
+                    <span>1. SQLite Tabloları & İlçe Özeti (View)</span>
+                </button>
+                <button type="button" onclick="switchDbModalTab('overrides')" id="dbm-tab-btn-overrides" class="whitespace-nowrap px-4 py-2 rounded-t-xl text-xs font-semibold bg-slate-200/70 hover:bg-white text-slate-600 border border-b-0 border-transparent cursor-pointer flex items-center gap-1.5">
+                    <i class="fa-solid fa-building-circle-check"></i>
+                    <span>2. Güncellenen Yapılar (Delta / Overrides)</span>
+                </button>
+                <button type="button" onclick="switchDbModalTab('cache')" id="dbm-tab-btn-cache" class="whitespace-nowrap px-4 py-2 rounded-t-xl text-xs font-semibold bg-slate-200/70 hover:bg-white text-slate-600 border border-b-0 border-transparent cursor-pointer flex items-center gap-1.5">
+                    <i class="fa-solid fa-hard-drive"></i>
+                    <span>3. Yerel Önbellek (localStorage & IndexedDB)</span>
+                </button>
+            </div>
+
+            <!-- Sekme İçerikleri -->
+            <div class="flex-1 overflow-y-auto p-5 sm:p-6 bg-white space-y-5 text-xs">
+                <!-- SEKME 1: SQLITE TABLOLARI VE İLÇE ÖZETİ -->
+                <div id="dbm-panel-tables" class="space-y-5">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div class="border border-slate-200 rounded-xl overflow-hidden">
+                            <div class="bg-slate-50 px-4 py-2.5 border-b border-slate-200 font-bold text-slate-800 flex items-center justify-between">
+                                <span><i class="fa-solid fa-sitemap text-indigo-600 mr-1.5"></i>İlişkisel Veritabanı Şeması (<code class="text-indigo-700">kentvizyon.db</code>)</span>
+                                <span class="text-[10px] text-slate-500 font-mono">7 Tablo + 2 View</span>
+                            </div>
+                            <table class="w-full text-left border-collapse text-[11px]">
+                                <thead>
+                                    <tr class="bg-slate-50/70 text-slate-500 border-b border-slate-200">
+                                        <th class="py-2 px-3">Tablo / View Adı</th>
+                                        <th class="py-2 px-3">Tür</th>
+                                        <th class="py-2 px-3">Açıklama</th>
+                                        <th class="py-2 px-3 text-right">Kayıt</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dbm-schema-tbody" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+
+                        <div class="border border-slate-200 rounded-xl overflow-hidden">
+                            <div class="bg-slate-50 px-4 py-2.5 border-b border-slate-200 font-bold text-slate-800 flex items-center justify-between">
+                                <span><i class="fa-solid fa-city text-teal-600 mr-1.5"></i>SQL View: <code class="text-teal-700">v_ilce_yapi_ozeti</code></span>
+                                <span class="text-[10px] text-slate-500">İlçe Bazlı 759 Yapı Dağılımı</span>
+                            </div>
+                            <div class="max-h-64 overflow-y-auto">
+                                <table class="w-full text-left border-collapse text-[11px]">
+                                    <thead class="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-500">
+                                        <tr>
+                                            <th class="py-2 px-3">İlçe</th>
+                                            <th class="py-2 px-3 text-center">Toplam Yapı</th>
+                                            <th class="py-2 px-3 text-center">İşleme Alınmadı</th>
+                                            <th class="py-2 px-3 text-center">Aktif Süreç</th>
+                                            <th class="py-2 px-3 text-center">Hak Kaybı Riski</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="dbm-district-view-tbody" class="divide-y divide-slate-100"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SEKME 2: GÜNCELLENEN YAPILAR (OVERRIDES) -->
+                <div id="dbm-panel-overrides" class="hidden space-y-4">
+                    <div class="flex items-center justify-between bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                        <div>
+                            <h4 class="font-bold text-slate-800">Kullanıcılar Tarafından Güncellenen Yapı Kayıtları (<code class="text-indigo-600">buildings WHERE is_modified = 1</code>)</h4>
+                            <p class="text-[11px] text-slate-500">CBS Harita ekranında aşaması, tebligatı veya PDF evrakı değiştirilen yapıların veritabanı/önbellek karşılığı.</p>
+                        </div>
+                    </div>
+                    <div class="border border-slate-200 rounded-xl overflow-hidden">
+                        <table class="w-full text-left border-collapse text-[11px]">
+                            <thead>
+                                <tr class="bg-slate-50 text-slate-500 border-b border-slate-200 uppercase text-[10px]">
+                                    <th class="py-2.5 px-4">Yapı ID / MAKS</th>
+                                    <th class="py-2.5 px-3">Güncel Süreç Aşaması</th>
+                                    <th class="py-2.5 px-3">İmar Durumu</th>
+                                    <th class="py-2.5 px-3">Tebligat Durumu</th>
+                                    <th class="py-2.5 px-3">Timeline Kayıt Sayısı</th>
+                                    <th class="py-2.5 px-4">Son Güncelleme</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dbm-overrides-tbody" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- SEKME 3: YEREL ÖNBELLEK (LOCALSTORAGE & INDEXEDDB) -->
+                <div id="dbm-panel-cache" class="hidden space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="dbm-localstorage-cards"></div>
+                    <div class="border border-slate-200 rounded-xl overflow-hidden">
+                        <div class="bg-slate-50 px-4 py-2.5 border-b border-slate-200 font-bold text-slate-800 flex items-center justify-between">
+                            <span><i class="fa-solid fa-file-pdf text-rose-500 mr-1.5"></i>IndexedDB & SQLite PDF Evrak Deposu (<code class="text-purple-700">KentVizyonStorageDB.pdfs</code> / <code class="text-indigo-700">pdf_documents</code>)</span>
+                        </div>
+                        <table class="w-full text-left border-collapse text-[11px]">
+                            <thead>
+                                <tr class="bg-slate-50 text-slate-500 border-b border-slate-200 text-[10px] uppercase">
+                                    <th class="py-2 px-4">PDF Evrak Anahtarı (ID)</th>
+                                    <th class="py-2 px-3">Dosya Adı</th>
+                                    <th class="py-2 px-3">Veri Boyutu</th>
+                                    <th class="py-2 px-4">Yüklenme Tarihi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dbm-pdfs-tbody" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Alt Bar -->
+            <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 shrink-0">
+                <span id="dbm-footer-sync-text">Son Senkronizasyon: -</span>
+                <button type="button" onclick="closeDbInspectorModal()" class="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-1.5 rounded-xl text-xs transition cursor-pointer">
+                    Kapat
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ── YARDIMCI FORMATLAYICILAR ───────────────────────────────────────────
+        const categoryMeta = {
+            'AUTH': { label: 'Oturum / Giriş-Çıkış', badge: 'bg-sky-100 text-sky-800 border-sky-200', icon: 'fa-right-to-bracket' },
+            'STAGE_UPDATE': { label: 'Aşama Güncelleme', badge: 'bg-indigo-100 text-indigo-800 border-indigo-200', icon: 'fa-stairs' },
+            'PDF_UPLOAD': { label: 'PDF Evrak Yükleme', badge: 'bg-purple-100 text-purple-800 border-purple-200', icon: 'fa-file-arrow-up' },
+            'PDF_VIEW': { label: 'PDF Görüntüleme', badge: 'bg-slate-100 text-slate-700 border-slate-200', icon: 'fa-file-pdf' },
+            'TEBLIGAT': { label: 'Tebligat İşlemi', badge: 'bg-amber-100 text-amber-900 border-amber-200', icon: 'fa-envelope-open-text' },
+            'BUILDING_VIEW': { label: 'Yapı Sorgulama / İnceleme', badge: 'bg-teal-100 text-teal-800 border-teal-200', icon: 'fa-magnifying-glass-location' },
+            'USER_MGMT': { label: 'Kullanıcı & Yetki Yönetimi', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200', icon: 'fa-user-gear' },
+            'SECURITY': { label: 'Güvenlik / Yetkisiz Deneme', badge: 'bg-rose-100 text-rose-800 border-rose-200', icon: 'fa-shield-halved' }
+        };
+
+        function formatDateTimeTR(isoStr) {
+            if (!isoStr) return '-';
+            try {
+                const d = new Date(isoStr);
+                if (isNaN(d.getTime())) return isoStr;
+                const pad = n => String(n).padStart(2, '0');
+                return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+            } catch (e) {
+                return isoStr;
+            }
+        }
+
+        function showToast(message, isWarning = false) {
+            const toast = document.createElement('div');
+            toast.className = `fixed top-5 right-5 ${isWarning ? 'bg-amber-600' : 'bg-emerald-600'} text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg flex items-center space-x-2 z-[9999] transition-opacity duration-300`;
+            toast.innerHTML = `<i class="fa-solid ${isWarning ? 'fa-circle-exclamation' : 'fa-circle-check'} text-sm"></i><span>${message}</span>`;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 2800);
+        }
+
+        function extractMaksLinkHtml(targetStr) {
+            const safeTarget = targetStr || '-';
+            const maksMatch = String(safeTarget).match(/MAKS:\s*([0-9A-Za-z_-]+)/i);
+            if (maksMatch && maksMatch[1]) {
+                const maksId = maksMatch[1];
+                return `
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <span class="font-semibold text-indigo-700">${safeTarget}</span>
+                        <a href="v0001.html?focusId=${encodeURIComponent(maksId)}" class="px-1.5 py-0.5 rounded bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 text-[10px] font-bold transition inline-flex items-center gap-1" title="Bu yapıyı CBS haritasında aç">
+                            <i class="fa-solid fa-location-crosshairs text-[9px]"></i>
+                            <span>Harita</span>
+                        </a>
+                    </div>
+                `;
+            }
+            return `<span class="font-semibold text-indigo-700">${safeTarget}</span>`;
+        }
+
+        // ── KULLANICI DETAYLI İŞLEM GEÇMİŞİ MODALI ─────────────────────────────
+        let activeDetailUsername = null;
+
+        window.openUserDetailModal = function(username) {
+            if (!username) return;
+            activeDetailUsername = String(username).trim();
+            const u = window.AuthSecurity ? window.AuthSecurity.getUserByUsername(activeDetailUsername) : null;
+            const allLogs = window.AuthSecurity ? window.AuthSecurity.getAuditLogs() : [];
+            const userLogs = allLogs.filter(l => (l.username || '').toLowerCase() === activeDetailUsername.toLowerCase());
+
+            const displayName = u ? u.displayName : (userLogs[0]?.displayName || activeDetailUsername);
+            const role = u ? u.role : (userLogs[0]?.role || 'goruntuleyen');
+            const roleLabel = window.AuthSecurity ? window.AuthSecurity.getRoleLabel(role) : role;
+            const dept = u ? (u.department || '-') : '-';
+            const status = u ? u.status : 'aktif';
+            const lastLogin = u ? u.lastLoginAt : (userLogs.find(l => l.category === 'AUTH')?.timestamp || null);
+
+            document.getElementById('uhm-displayname').textContent = displayName;
+            document.getElementById('uhm-username').textContent = '@' + (u ? u.username : activeDetailUsername);
+            document.getElementById('uhm-role-badge').textContent = roleLabel;
+            document.getElementById('uhm-department').textContent = dept;
+            document.getElementById('uhm-last-login').textContent = formatDateTimeTR(lastLogin);
+
+            const statusBadge = document.getElementById('uhm-status-badge');
+            if (status === 'aktif') {
+                statusBadge.textContent = 'Aktif Hesap';
+                statusBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30';
+            } else {
+                statusBadge.textContent = 'Askıda (Pasif)';
+                statusBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-400/30';
+            }
+
+            const perms = u ? (u.permissions || window.AuthSecurity.getDefaultPermissionsForRole(role)) : window.AuthSecurity.getDefaultPermissionsForRole(role);
+            const permLabels = [];
+            if (perms.canAccessAdminPanel) permLabels.push('Yönetim Paneli');
+            if (perms.canUpdateStage) permLabels.push('Aşama Kontrol/Düzenleme');
+            if (perms.canUploadPdf) permLabels.push('PDF Ekleme/Değiştirme');
+            if (perms.canSendTebligat) permLabels.push('Tebligat Gönderimi');
+            if (perms.canViewPdf) permLabels.push('PDF Görüntüleme');
+            document.getElementById('uhm-perms-summary').innerHTML = `<i class="fa-solid fa-key mr-1 text-amber-400"></i>Yetkiler: <strong class="text-slate-200">${permLabels.join(', ') || 'Salt Görüntüleme'}</strong>`;
+
+            const editBtn = document.getElementById('uhm-btn-edit-user');
+            if (u) {
+                editBtn.classList.remove('hidden');
+                editBtn.onclick = function() {
+                    closeUserDetailModal();
+                    switchAdminTab('users');
+                    loadUserIntoForm(u.username);
+                };
+            } else {
+                editBtn.classList.add('hidden');
+            }
+
+            // İstatistikleri Doldur
+            document.getElementById('uhm-stat-total').textContent = userLogs.length;
+            document.getElementById('uhm-stat-stage').textContent = userLogs.filter(l => l.category === 'STAGE_UPDATE').length;
+            document.getElementById('uhm-stat-pdf').textContent = userLogs.filter(l => l.category === 'PDF_UPLOAD' || l.category === 'PDF_VIEW').length;
+            document.getElementById('uhm-stat-tebligat').textContent = userLogs.filter(l => l.category === 'TEBLIGAT').length;
+            document.getElementById('uhm-stat-view').textContent = userLogs.filter(l => l.category === 'BUILDING_VIEW').length;
+            document.getElementById('uhm-stat-auth').textContent = userLogs.filter(l => l.category === 'AUTH').length;
+
+            // Filtreleri sıfırla ve tabloyu çiz
+            document.getElementById('uhm-search-input').value = '';
+            document.getElementById('uhm-filter-category').value = 'all';
+            document.getElementById('uhm-filter-start').value = '';
+            document.getElementById('uhm-filter-end').value = '';
+
+            renderUserDetailLogs();
+            document.getElementById('user-history-modal').classList.remove('hidden');
+        };
+
+        window.closeUserDetailModal = function() {
+            document.getElementById('user-history-modal').classList.add('hidden');
+        };
+
+        window.setUhmCategoryFilter = function(cat) {
+            document.getElementById('uhm-filter-category').value = cat;
+            renderUserDetailLogs();
+        };
+
+        window.resetUhmFilters = function() {
+            document.getElementById('uhm-search-input').value = '';
+            document.getElementById('uhm-filter-category').value = 'all';
+            document.getElementById('uhm-filter-start').value = '';
+            document.getElementById('uhm-filter-end').value = '';
+            renderUserDetailLogs();
+        };
+
+        function renderUserDetailLogs() {
+            if (!activeDetailUsername) return;
+            const q = document.getElementById('uhm-search-input').value.trim().toLowerCase();
+            const cat = document.getElementById('uhm-filter-category').value;
+            const startVal = document.getElementById('uhm-filter-start').value;
+            const endVal = document.getElementById('uhm-filter-end').value;
+
+            const allLogs = window.AuthSecurity ? window.AuthSecurity.getAuditLogs() : [];
+            const filtered = allLogs.filter(l => {
+                if ((l.username || '').toLowerCase() !== activeDetailUsername.toLowerCase()) return false;
+                if (cat === 'PDF_ALL') {
+                    if (l.category !== 'PDF_UPLOAD' && l.category !== 'PDF_VIEW') return false;
+                } else if (cat !== 'all' && l.category !== cat) {
+                    return false;
+                }
+                if (startVal) {
+                    const logDate = (l.timestamp || '').slice(0, 10);
+                    if (logDate < startVal) return false;
+                }
+                if (endVal) {
+                    const logDate = (l.timestamp || '').slice(0, 10);
+                    if (logDate > endVal) return false;
+                }
+                if (q) {
+                    const hay = `${l.action} ${l.target} ${l.details}`.toLowerCase();
+                    if (!hay.includes(q)) return false;
+                }
+                return true;
+            });
+
+            document.getElementById('uhm-filtered-count').textContent = filtered.length;
+            const tbody = document.getElementById('uhm-logs-tbody');
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="py-12 text-center text-slate-400">
+                            Bu kullanıcıya ait seçilen kriterlerde işlem kaydı bulunamadı.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(l => {
+                const meta = categoryMeta[l.category] || { label: l.category, badge: 'bg-slate-100 text-slate-700 border-slate-200', icon: 'fa-circle-info' };
+                const statusBadge = l.status === 'danger'
+                    ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">Engellendi</span>'
+                    : (l.status === 'warning'
+                        ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Uyarı</span>'
+                        : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">Başarılı</span>');
+
+                return `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="py-3 px-4 font-mono text-[11px] text-slate-600 whitespace-nowrap">${formatDateTimeTR(l.timestamp)}</td>
+                        <td class="py-3 px-3">
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold border ${meta.badge}">
+                                <i class="fa-solid ${meta.icon}"></i>
+                                <span>${meta.label}</span>
+                            </span>
+                        </td>
+                        <td class="py-3 px-3 font-bold text-slate-800">${l.action}</td>
+                        <td class="py-3 px-3">${extractMaksLinkHtml(l.target)}</td>
+                        <td class="py-3 px-4 text-slate-600 leading-relaxed">${l.details || '-'}</td>
+                        <td class="py-3 px-3 text-center">${statusBadge}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // ── SEKME GEÇİŞLERİ ────────────────────────────────────────────────────
+        window.switchAdminTab = function(tabName) {
+            const tabs = ['dashboard', 'audit', 'users', 'permissions'];
+            tabs.forEach(t => {
+                const panel = document.getElementById(`tab-panel-${t}`);
+                const btn = document.getElementById(`tab-btn-${t}`);
+                if (t === tabName) {
+                    panel.classList.remove('hidden');
+                    btn.classList.remove('tab-btn-inactive');
+                    btn.classList.add('tab-btn-active');
+                } else {
+                    panel.classList.add('hidden');
+                    btn.classList.remove('tab-btn-active');
+                    btn.classList.add('tab-btn-inactive');
+                }
+            });
+
+            if (tabName === 'dashboard') renderDashboardTab();
+            if (tabName === 'audit') renderAuditTab();
+            if (tabName === 'users') renderUsersTab();
+            if (tabName === 'permissions') renderPermissionsTab();
+        };
+
+        function updateHeaderBadges() {
+            const users = window.AuthSecurity ? window.AuthSecurity.getUsers() : [];
+            const logs = window.AuthSecurity ? window.AuthSecurity.getAuditLogs() : [];
+            document.getElementById('badge-total-users').textContent = users.length;
+            document.getElementById('badge-total-logs').textContent = logs.length;
+        }
+
+        // ── SEKME 1: GENEL İZLEME VE KULLANICI AKTİVİTE ÖZETİ ──────────────────
+        function renderDashboardTab() {
+            updateHeaderBadges();
+            const users = window.AuthSecurity ? window.AuthSecurity.getUsers() : [];
+            const logs = window.AuthSecurity ? window.AuthSecurity.getAuditLogs() : [];
+
+            const activeUsers = users.filter(u => u.status === 'aktif').length;
+            const todayPrefix = new Date().toISOString().split('T')[0];
+            const todayLogs = logs.filter(l => (l.timestamp || '').startsWith(todayPrefix)).length;
+            const dataOps = logs.filter(l => ['STAGE_UPDATE', 'PDF_UPLOAD', 'TEBLIGAT'].includes(l.category)).length;
+            const secAlerts = logs.filter(l => l.category === 'SECURITY' || l.status === 'danger' || l.status === 'warning').length;
+
+            document.getElementById('stat-users-total').textContent = users.length;
+            document.getElementById('stat-users-active-sub').textContent = `${activeUsers} Aktif / ${users.length - activeUsers} Pasif`;
+            document.getElementById('stat-logs-total').textContent = logs.length;
+            document.getElementById('stat-logs-today').textContent = todayLogs;
+            document.getElementById('stat-data-ops').textContent = dataOps;
+            document.getElementById('stat-security-alerts').textContent = secAlerts;
+
+            // Kullanıcı Bazlı İşlem Dağılım Tablosu (Satıra veya kullanıcıya tıklanınca detaylı geçmiş açılır)
+            const tbody = document.getElementById('dashboard-user-stats-tbody');
+            tbody.innerHTML = users.map(u => {
+                const uLogs = logs.filter(l => (l.username || '').toLowerCase() === u.username.toLowerCase());
+                const authCount = uLogs.filter(l => l.category === 'AUTH').length;
+                const stageCount = uLogs.filter(l => l.category === 'STAGE_UPDATE').length;
+                const pdfCount = uLogs.filter(l => l.category === 'PDF_UPLOAD' || l.category === 'PDF_VIEW').length;
+                const tebCount = uLogs.filter(l => l.category === 'TEBLIGAT').length;
+                const viewCount = uLogs.filter(l => l.category === 'BUILDING_VIEW').length;
+                const roleLabel = window.AuthSecurity.getRoleLabel(u.role);
+
+                return `
+                    <tr onclick="openUserDetailModal('${u.username}')" class="hover:bg-indigo-50/60 transition cursor-pointer group" title="@${u.username} detaylı işlem geçmişini görmek için tıklayın">
+                        <td class="py-3 px-4">
+                            <div class="font-bold text-slate-900 group-hover:text-indigo-700 flex items-center gap-1.5">
+                                <span>${u.displayName}</span>
+                                <i class="fa-solid fa-arrow-up-right-from-square text-[10px] text-indigo-400 opacity-0 group-hover:opacity-100 transition"></i>
+                            </div>
+                            <div class="text-[11px] text-indigo-600 font-mono">@${u.username}</div>
+                        </td>
+                        <td class="py-3 px-3">
+                            <div class="font-semibold text-slate-700">${roleLabel}</div>
+                            <div class="text-[11px] text-slate-400">${u.department || '-'}</div>
+                        </td>
+                        <td class="py-3 px-3 text-center">
+                            ${u.status === 'aktif'
+                                ? '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">Aktif</span>'
+                                : '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">Askıda</span>'}
+                        </td>
+                        <td class="py-3 px-3 font-mono text-[11px] text-slate-600">${formatDateTimeTR(u.lastLoginAt)}</td>
+                        <td class="py-3 px-3 text-center font-semibold text-sky-700">${authCount}</td>
+                        <td class="py-3 px-3 text-center font-semibold text-indigo-700">${stageCount}</td>
+                        <td class="py-3 px-3 text-center font-semibold text-purple-700">${pdfCount}</td>
+                        <td class="py-3 px-3 text-center font-semibold text-amber-700">${tebCount}</td>
+                        <td class="py-3 px-3 text-center font-semibold text-teal-700">${viewCount}</td>
+                        <td class="py-3 px-3 text-center">
+                            <span class="px-2.5 py-0.5 rounded-lg bg-slate-900 text-white font-bold text-xs">${uLogs.length}</span>
+                        </td>
+                        <td class="py-3 px-4 text-right space-x-1.5" onclick="event.stopPropagation()">
+                            <button onclick="openUserDetailModal('${u.username}')" class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[11px] transition shadow-2xs">
+                                <i class="fa-solid fa-clock-rotate-left mr-1"></i>Detaylı Geçmiş
+                            </button>
+                            <button onclick="switchAdminTab('permissions')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] transition">
+                                <i class="fa-solid fa-key mr-1"></i>Yetki
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            // Son Gerçekleşen Kullanıcı İşlemleri
+            const recentEl = document.getElementById('dashboard-recent-logs');
+            const recentSlice = logs.slice(0, 12);
+            if (recentSlice.length === 0) {
+                recentEl.innerHTML = `<div class="p-8 text-center text-xs text-slate-400">Henüz kayıtlı kullanıcı işlemi bulunmuyor.</div>`;
+            } else {
+                recentEl.innerHTML = recentSlice.map(l => {
+                    const meta = categoryMeta[l.category] || { label: l.category, badge: 'bg-slate-100 text-slate-700', icon: 'fa-circle-info' };
+                    return `
+                        <div class="px-5 py-3 hover:bg-slate-50 flex items-start justify-between gap-4">
+                            <div class="flex items-start gap-3">
+                                <div class="w-8 h-8 rounded-lg ${meta.badge} border flex items-center justify-center shrink-0 mt-0.5">
+                                    <i class="fa-solid ${meta.icon} text-xs"></i>
+                                </div>
+                                <div>
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <button type="button" onclick="openUserDetailModal('${l.username}')" class="font-bold text-xs text-indigo-700 hover:underline flex items-center gap-1" title="Kullanıcının tüm işlem geçmişini aç">
+                                            <span>${l.displayName} (@${l.username})</span>
+                                        </button>
+                                        <span class="px-2 py-0.2 rounded text-[10px] font-bold border ${meta.badge}">${meta.label}</span>
+                                        <span class="text-xs font-semibold text-slate-700">— ${l.action}</span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-500 mt-0.5"><strong class="text-slate-700">${l.target}:</strong> ${l.details}</p>
+                                </div>
+                            </div>
+                            <span class="text-[11px] font-mono text-slate-400 shrink-0">${formatDateTimeTR(l.timestamp)}</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // Güvenlik Kayıtları
+            const secEl = document.getElementById('dashboard-security-logs');
+            const secLogs = logs.filter(l => l.category === 'SECURITY' || l.status === 'danger' || l.status === 'warning').slice(0, 8);
+            if (secLogs.length === 0) {
+                secEl.innerHTML = `<div class="py-8 text-center text-xs text-emerald-600 font-medium"><i class="fa-solid fa-shield-check mr-1"></i>Yetkisiz erişim veya hatalı giriş denemesi bulunmuyor.</div>`;
+            } else {
+                secEl.innerHTML = secLogs.map(l => `
+                    <div class="p-3 rounded-xl bg-rose-50/70 border border-rose-200 space-y-1">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-xs text-rose-900">${l.action}</span>
+                            <span class="text-[10px] font-mono text-rose-700">${formatDateTimeTR(l.timestamp)}</span>
+                        </div>
+                        <div class="text-[11px] text-rose-800">
+                            <strong>Kullanıcı:</strong>
+                            <button type="button" onclick="openUserDetailModal('${l.username}')" class="font-bold underline hover:text-rose-950">${l.displayName} (@${l.username})</button>
+                        </div>
+                        <div class="text-[11px] text-slate-600">${l.details}</div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        window.filterLogsByUsername = function(username) {
+            openUserDetailModal(username);
+        };
+
+        window.filterLogsBySecurity = function() {
+            populateAuditUserDropdown();
+            document.getElementById('audit-filter-user').value = 'all';
+            document.getElementById('audit-filter-category').value = 'SECURITY';
+            switchAdminTab('audit');
+        };
+
+        // ── SEKME 2: KULLANICI İŞLEM GEÇMİŞİ (AUDIT LOG) ───────────────────────
+        function populateAuditUserDropdown() {
+            const select = document.getElementById('audit-filter-user');
+            const currentVal = select.value;
+            const users = window.AuthSecurity ? window.AuthSecurity.getUsers() : [];
+            const logs = window.AuthSecurity ? window.AuthSecurity.getAuditLogs() : [];
+            const usernames = new Set(users.map(u => u.username));
+            logs.forEach(l => { if (l.username) usernames.add(l.username); });
+
+            select.innerHTML = '<option value="all">Tüm Kullanıcılar</option>' +
+                [...usernames].map(uname => `<option value="${uname}">@${uname}</option>`).join('');
+            if ([...usernames].includes(currentVal)) {
+                select.value = currentVal;
+            }
+        }
+
+        window.resetAuditFilters = function() {
+            document.getElementById('audit-search-input').value = '';
+            document.getElementById('audit-filter-user').value = 'all';
+            document.getElementById('audit-filter-category').value = 'all';
+            document.getElementById('audit-filter-start').value = '';
+            document.getElementById('audit-filter-end').value = '';
+            renderAuditTab();
+        };
+
+        function renderAuditTab() {
+            updateHeaderBadges();
+            populateAuditUserDropdown();
+
+            const q = document.getElementById('audit-search-input').value.trim().toLowerCase();
+            const userFilter = document.getElementById('audit-filter-user').value;
+            const catFilter = document.getElementById('audit-filter-category').value;
+            const startVal = document.getElementById('audit-filter-start').value;
+            const endVal = document.getElementById('audit-filter-end').value;
+
+            const logs = window.AuthSecurity ? window.AuthSecurity.getAuditLogs() : [];
+            const filtered = logs.filter(l => {
+                if (userFilter !== 'all' && (l.username || '').toLowerCase() !== userFilter.toLowerCase()) return false;
+                if (catFilter !== 'all' && l.category !== catFilter) return false;
+                if (startVal) {
+                    const logDate = (l.timestamp || '').slice(0, 10);
+                    if (logDate < startVal) return false;
+                }
+                if (endVal) {
+                    const logDate = (l.timestamp || '').slice(0, 10);
+                    if (logDate > endVal) return false;
+                }
+                if (q) {
+                    const hay = `${l.username} ${l.displayName} ${l.action} ${l.target} ${l.details}`.toLowerCase();
+                    if (!hay.includes(q)) return false;
+                }
+                return true;
+            });
+
+            document.getElementById('audit-filtered-count').textContent = filtered.length;
+            const tbody = document.getElementById('audit-logs-tbody');
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="py-12 text-center text-slate-400">
+                            Seçilen kriterlere uygun kullanıcı işlem kaydı bulunamadı.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(l => {
+                const meta = categoryMeta[l.category] || { label: l.category, badge: 'bg-slate-100 text-slate-700 border-slate-200', icon: 'fa-circle-info' };
+                const statusBadge = l.status === 'danger'
+                    ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">Engellendi</span>'
+                    : (l.status === 'warning'
+                        ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Uyarı</span>'
+                        : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">Başarılı</span>');
+
+                return `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="py-3 px-4 font-mono text-[11px] text-slate-600 whitespace-nowrap">${formatDateTimeTR(l.timestamp)}</td>
+                        <td class="py-3 px-4">
+                            <button type="button" onclick="openUserDetailModal('${l.username}')" class="text-left group">
+                                <div class="font-bold text-slate-900 group-hover:text-indigo-600 group-hover:underline">${l.displayName || l.username}</div>
+                                <div class="text-[10px] text-indigo-600 font-mono">@${l.username} (${window.AuthSecurity.getRoleLabel(l.role)})</div>
+                            </button>
+                        </td>
+                        <td class="py-3 px-3">
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold border ${meta.badge}">
+                                <i class="fa-solid ${meta.icon}"></i>
+                                <span>${meta.label}</span>
+                            </span>
+                        </td>
+                        <td class="py-3 px-3 font-bold text-slate-800">${l.action}</td>
+                        <td class="py-3 px-3">${extractMaksLinkHtml(l.target)}</td>
+                        <td class="py-3 px-4 text-slate-600 leading-relaxed">${l.details || '-'}</td>
+                        <td class="py-3 px-3 text-center">${statusBadge}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        window.handleClearAuditLogs = function() {
+            if (!confirm('Tüm geçmiş kullanıcı işlem kayıtlarını (Audit Log) temizlemek istediğinize emin misiniz?')) return;
+            if (window.AuthSecurity) {
+                window.AuthSecurity.clearAuditLogs();
+            }
+            renderAuditTab();
+            showToast('Denetim günlüğü sıfırlandı.', true);
+        };
+
+        // ── SEKME 3: KULLANICI HESAPLARI YÖNETİMİ ──────────────────────────────
+        function renderUsersTab() {
+            updateHeaderBadges();
+            const users = window.AuthSecurity ? window.AuthSecurity.getUsers() : [];
+            const tbody = document.getElementById('users-list-tbody');
+
+            tbody.innerHTML = users.map(u => {
+                const roleLabel = window.AuthSecurity.getRoleLabel(u.role);
+                const isMainAdmin = u.username.toLowerCase() === 'admin';
+                const badgeClass = isMainAdmin
+                    ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                    : (u.role === 'duzenleyen'
+                        ? 'bg-teal-100 text-teal-800 border border-teal-200'
+                        : 'bg-slate-100 text-slate-700 border border-slate-200');
+                return `
+                    <tr onclick="openUserDetailModal('${u.username}')" class="hover:bg-indigo-50/50 transition cursor-pointer group" title="@${u.username} detaylı işlem geçmişini görmek için tıklayın">
+                        <td class="py-3 px-4 font-bold text-indigo-700 font-mono group-hover:underline">@${u.username}</td>
+                        <td class="py-3 px-3 font-semibold text-slate-800 group-hover:text-indigo-700">${u.displayName}</td>
+                        <td class="py-3 px-3 text-slate-600">${u.department || '-'}</td>
+                        <td class="py-3 px-3">
+                            <span class="px-2.5 py-0.5 rounded-lg text-[10px] font-bold ${badgeClass}">
+                                ${roleLabel}
+                            </span>
+                        </td>
+                        <td class="py-3 px-3 text-center">
+                            ${u.status === 'aktif'
+                                ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Aktif</span>'
+                                : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">Askıda</span>'}
+                        </td>
+                        <td class="py-3 px-3 font-mono text-[11px] text-slate-500">${formatDateTimeTR(u.lastLoginAt)}</td>
+                        <td class="py-3 px-4 text-right space-x-1 whitespace-nowrap" onclick="event.stopPropagation()">
+                            <button onclick="openUserDetailModal('${u.username}')" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px]" title="Kullanıcının Detaylı İşlem Geçmişi">
+                                <i class="fa-solid fa-clock-rotate-left mr-1"></i>İşlem Geçmişi
+                            </button>
+                            <button onclick="loadUserIntoForm('${u.username}')" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold text-[11px]" title="Düzenle / Şifre Değiştir">
+                                <i class="fa-solid fa-pen-to-square mr-1"></i>Düzenle
+                            </button>
+                            ${!isMainAdmin ? `
+                                <button onclick="handleToggleUserStatus('${u.username}')" class="px-2.5 py-1 rounded-lg ${u.status === 'aktif' ? 'bg-amber-50 hover:bg-amber-100 text-amber-800' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800'} font-semibold text-[11px]">
+                                    ${u.status === 'aktif' ? 'Askıya Al' : 'Aktifleştir'}
+                                </button>
+                            ` : ''}
+                            ${!u.isBuiltIn && !isMainAdmin ? `
+                                <button onclick="handleDeleteUser('${u.username}')" class="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-[11px]" title="Kullanıcıyı Sil">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            ` : ''}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        window.resetUserFormForNew = function() {
+            document.getElementById('uf-mode').value = 'create';
+            const unameInput = document.getElementById('uf-username');
+            unameInput.value = '';
+            unameInput.readOnly = false;
+            unameInput.classList.remove('bg-slate-200');
+            document.getElementById('uf-displayname').value = '';
+            document.getElementById('uf-department').value = '';
+
+            const roleSelect = document.getElementById('uf-role');
+            roleSelect.disabled = false;
+            roleSelect.innerHTML = `
+                <option value="goruntuleyen">Görüntüleyen (Salt Okunur)</option>
+                <option value="duzenleyen">Düzenleyen (Aşama & PDF Yetkili)</option>
+            `;
+            roleSelect.value = 'goruntuleyen';
+
+            const statusSelect = document.getElementById('uf-status');
+            statusSelect.disabled = false;
+            statusSelect.value = 'aktif';
+
+            document.getElementById('uf-password').value = '';
+            document.getElementById('uf-password').required = true;
+            document.getElementById('user-form-title').textContent = 'Yeni Kullanıcı Oluştur';
+            document.getElementById('uf-submit-text').textContent = 'Kullanıcıyı Oluştur';
+            document.getElementById('uf-password-label').textContent = 'Giriş Şifresi (Zorunlu)';
+        };
+
+        window.loadUserIntoForm = function(username) {
+            const u = window.AuthSecurity ? window.AuthSecurity.getUserByUsername(username) : null;
+            if (!u) return;
+            const isMainAdmin = u.username.toLowerCase() === 'admin';
+            document.getElementById('uf-mode').value = 'edit';
+            const unameInput = document.getElementById('uf-username');
+            unameInput.value = u.username;
+            unameInput.readOnly = true;
+            unameInput.classList.add('bg-slate-200');
+            document.getElementById('uf-displayname').value = u.displayName || '';
+            document.getElementById('uf-department').value = u.department || '';
+
+            const roleSelect = document.getElementById('uf-role');
+            const statusSelect = document.getElementById('uf-status');
+
+            if (isMainAdmin) {
+                roleSelect.innerHTML = `<option value="yonetici" selected>Yönetici (Tek Admin)</option>`;
+                roleSelect.disabled = true;
+                statusSelect.value = 'aktif';
+                statusSelect.disabled = true;
+            } else {
+                roleSelect.innerHTML = `
+                    <option value="goruntuleyen">Görüntüleyen (Salt Okunur)</option>
+                    <option value="duzenleyen">Düzenleyen (Aşama & PDF Yetkili)</option>
+                `;
+                roleSelect.disabled = false;
+                roleSelect.value = u.role === 'duzenleyen' ? 'duzenleyen' : 'goruntuleyen';
+                statusSelect.disabled = false;
+                statusSelect.value = u.status || 'aktif';
+            }
+
+            document.getElementById('uf-password').value = '';
+            document.getElementById('uf-password').required = false;
+            document.getElementById('user-form-title').textContent = `Kullanıcı Düzenle: @${u.username}`;
+            document.getElementById('uf-submit-text').textContent = 'Değişiklikleri Kaydet';
+            document.getElementById('uf-password-label').textContent = 'Yeni Şifre (Değiştirmek İsterseniz Yazın)';
+        };
+
+        document.getElementById('admin-user-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const unameVal = document.getElementById('uf-username').value.trim();
+            const isMainAdmin = unameVal.toLowerCase() === 'admin';
+            const payload = {
+                username: unameVal,
+                displayName: document.getElementById('uf-displayname').value.trim(),
+                department: document.getElementById('uf-department').value.trim(),
+                role: isMainAdmin ? 'yonetici' : document.getElementById('uf-role').value,
+                status: isMainAdmin ? 'aktif' : document.getElementById('uf-status').value,
+                password: document.getElementById('uf-password').value.trim()
+            };
+
+            const res = window.AuthSecurity.createOrUpdateUser(payload);
+            if (!res.ok) {
+                alert(res.error);
+                return;
+            }
+            showToast(res.isNew ? `Yeni kullanıcı (@${res.user.username}) oluşturuldu!` : `@${res.user.username} bilgileri güncellendi!`);
+            resetUserFormForNew();
+            renderUsersTab();
+        });
+
+        window.handleToggleUserStatus = function(username) {
+            const res = window.AuthSecurity.toggleUserStatus(username);
+            if (!res.ok) {
+                alert(res.error);
+                return;
+            }
+            showToast(`@${username} hesap durumu "${res.user.status.toUpperCase()}" yapıldı.`, res.user.status !== 'aktif');
+            renderUsersTab();
+        };
+
+        window.handleDeleteUser = function(username) {
+            if (!confirm(`@${username} kullanıcı hesabını kalıcı olarak silmek istediğinize emin misiniz?`)) return;
+            const res = window.AuthSecurity.deleteUser(username);
+            if (!res.ok) {
+                alert(res.error);
+                return;
+            }
+            showToast(`@${username} hesabı silindi.`, true);
+            renderUsersTab();
+        };
+
+        // ── SEKME 4: KULLANICI YETKİ MATRİSİ ───────────────────────────────────
+        const permKeys = [
+            'canUpdateStage',
+            'canUploadPdf',
+            'canSendTebligat',
+            'canViewExecSummary',
+            'canViewPdf',
+            'canAccessAdminPanel'
+        ];
+
+        function renderPermissionsTab() {
+            const users = window.AuthSecurity ? window.AuthSecurity.getUsers() : [];
+            const tbody = document.getElementById('permissions-matrix-tbody');
+
+            tbody.innerHTML = users.map(u => {
+                const isMainAdmin = u.username.toLowerCase() === 'admin';
+                const perms = u.permissions || window.AuthSecurity.getDefaultPermissionsForRole(u.role);
+
+                const checkboxesHtml = permKeys.map(pk => {
+                    if (pk === 'canAccessAdminPanel') {
+                        if (isMainAdmin) {
+                            return `
+                                <td class="py-3.5 px-3 text-center">
+                                    <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 font-bold text-[10px] border border-indigo-200">
+                                        <i class="fa-solid fa-crown mr-1"></i>Tek Admin
+                                    </span>
+                                </td>
+                            `;
+                        }
+                        return `
+                            <td class="py-3.5 px-3 text-center">
+                                <span class="text-[10px] text-slate-400 font-semibold" title="Yönetim paneline yalnızca tek admin erişebilir">
+                                    <i class="fa-solid fa-lock mr-1"></i>Kapalı
+                                </span>
+                            </td>
+                        `;
+                    }
+
+                    const checked = Boolean(perms[pk]);
+                    return `
+                        <td class="py-3.5 px-3 text-center">
+                            <input type="checkbox"
+                                class="w-4 h-4 accent-indigo-600 rounded cursor-pointer disabled:opacity-50"
+                                ${checked ? 'checked' : ''}
+                                ${isMainAdmin ? 'disabled' : ''}
+                                onchange="handlePermissionToggle('${u.username}', '${pk}', this.checked)">
+                        </td>
+                    `;
+                }).join('');
+
+                const roleCellHtml = isMainAdmin
+                    ? `<span class="px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-800 border border-indigo-200 font-bold text-xs inline-flex items-center gap-1.5">
+                           <i class="fa-solid fa-user-shield text-[10px]"></i>
+                           <span>Yönetici (Tek Admin)</span>
+                       </span>`
+                    : `<select onchange="handleRolePresetChange('${u.username}', this.value)" class="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700">
+                           <option value="goruntuleyen" ${u.role === 'goruntuleyen' ? 'selected' : ''}>Görüntüleyen (Salt Okunur)</option>
+                           <option value="duzenleyen" ${u.role === 'duzenleyen' ? 'selected' : ''}>Düzenleyen (Aşama & PDF Yetkili)</option>
+                       </select>`;
+
+                return `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="py-3.5 px-4">
+                            <button type="button" onclick="openUserDetailModal('${u.username}')" class="text-left group">
+                                <div class="font-bold text-slate-900 group-hover:text-indigo-600 group-hover:underline">${u.displayName}</div>
+                                <div class="text-[11px] text-indigo-600 font-mono">@${u.username}</div>
+                            </button>
+                        </td>
+                        <td class="py-3.5 px-3">
+                            ${roleCellHtml}
+                        </td>
+                        ${checkboxesHtml}
+                        <td class="py-3.5 px-4 text-right">
+                            <button onclick="openUserDetailModal('${u.username}')" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold text-xs transition">
+                                <i class="fa-solid fa-clock-rotate-left mr-1"></i>Detaylı İşlem Geçmişi
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        window.handlePermissionToggle = function(username, permKey, isChecked) {
+            const u = window.AuthSecurity.getUserByUsername(username);
+            if (!u || u.username.toLowerCase() === 'admin') return;
+            const updatedPerms = { ...(u.permissions || {}), [permKey]: Boolean(isChecked), canAccessAdminPanel: false };
+            const hasAnyEditPerm = Boolean(updatedPerms.canUpdateStage || updatedPerms.canUploadPdf || updatedPerms.canSendTebligat);
+            const resolvedRole = hasAnyEditPerm ? 'duzenleyen' : 'goruntuleyen';
+            window.AuthSecurity.updateUserPermissions(username, resolvedRole, updatedPerms);
+            showToast(`@${username} kullanıcısının yetkisi güncellendi (${window.AuthSecurity.getRoleLabel(resolvedRole)}).`);
+            renderPermissionsTab();
+        };
+
+        window.handleRolePresetChange = function(username, newRole) {
+            if (String(username || '').toLowerCase() === 'admin') return;
+            const defaultPerms = window.AuthSecurity.getDefaultPermissionsForRole(newRole);
+            window.AuthSecurity.updateUserPermissions(username, newRole, defaultPerms);
+            showToast(`@${username} rolü "${window.AuthSecurity.getRoleLabel(newRole)}" olarak güncellendi.`);
+            renderPermissionsTab();
+        };
+
+        // ── SQLite VERİTABANI VE YEREL ÖNBELLEK DENETLEYİCİSİ MODALI ──────────
+        window.openDbInspectorModal = async function() {
+            const modal = document.getElementById('db-inspector-modal');
+            modal.classList.remove('hidden');
+            await renderDbInspectorModal();
+        };
+
+        window.closeDbInspectorModal = function() {
+            document.getElementById('db-inspector-modal').classList.add('hidden');
+        };
+
+        window.switchDbModalTab = function(tabKey) {
+            ['tables', 'overrides', 'cache'].forEach(k => {
+                const btn = document.getElementById('dbm-tab-btn-' + k);
+                const panel = document.getElementById('dbm-panel-' + k);
+                if (k === tabKey) {
+                    btn.className = 'whitespace-nowrap px-4 py-2 rounded-t-xl text-xs font-bold bg-white text-indigo-700 border border-b-0 border-slate-200 cursor-pointer flex items-center gap-1.5';
+                    panel.classList.remove('hidden');
+                } else {
+                    btn.className = 'whitespace-nowrap px-4 py-2 rounded-t-xl text-xs font-semibold bg-slate-200/70 hover:bg-white text-slate-600 border border-b-0 border-transparent cursor-pointer flex items-center gap-1.5';
+                    panel.classList.add('hidden');
+                }
+            });
+        };
+
+        window.triggerManualDbSync = async function() {
+            const btn = document.getElementById('btn-manual-db-sync');
+            if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Senkronize Ediliyor...</span>';
+            if (window.AuthSecurity && typeof window.AuthSecurity.syncFromDatabase === 'function') {
+                const res = await window.AuthSecurity.syncFromDatabase();
+                if (res && res.connected) {
+                    showToast('SQLite veritabanı (kentvizyon.db) ile tam senkronizasyon tamamlandı.');
+                } else {
+                    showToast('Yerel önbellek (localStorage + IndexedDB) verileri güncellendi.');
+                }
+            }
+            if (btn) btn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i><span>Şimdi Senkronize Et</span>';
+            await renderDbInspectorModal();
+        };
+
+        async function renderDbInspectorModal() {
+            const dbStatus = (window.DatabaseClient && typeof window.DatabaseClient.getStatus === 'function')
+                ? window.DatabaseClient.getStatus()
+                : { connected: false, dbSizeKB: 184.0, stats: null, districtView: [] };
+
+            const users = window.AuthSecurity ? window.AuthSecurity.getUsers() : [];
+            const logs = window.AuthSecurity ? window.AuthSecurity.getAuditLogs() : [];
+            const overridesMap = window.StorageService ? window.StorageService.getBuildingOverrides() : {};
+            const overridesList = Object.values(overridesMap);
+            const storedPdfs = (window.StorageService && typeof window.StorageService.getAllStoredPdfs === 'function')
+                ? await window.StorageService.getAllStoredPdfs()
+                : [];
+
+            const totalBuildings = (dbStatus.stats && dbStatus.stats.totalBuildings)
+                ? dbStatus.stats.totalBuildings
+                : ((window.GEOJSON_DATA && Array.isArray(window.GEOJSON_DATA.features)) ? window.GEOJSON_DATA.features.length : 759);
+
+            // Bağlantı rozeti
+            const connBadge = document.getElementById('dbm-conn-badge');
+            const dot = document.getElementById('db-status-dot');
+            const txt = document.getElementById('db-status-text');
+            if (dbStatus.connected) {
+                connBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+                connBadge.textContent = 'Canlı SQLite Sunucusu Bağlı (kentvizyon.db)';
+                if (dot && txt) {
+                    dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
+                    txt.textContent = 'SQLite Aktif (kentvizyon.db)';
+                }
+            } else {
+                connBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40';
+                connBadge.textContent = 'Hibrit Yerel Önbellek Aktif (SQLite Hazır)';
+            }
+
+            // İstatistik kartları
+            document.getElementById('dbm-stat-buildings').textContent = totalBuildings;
+            document.getElementById('dbm-stat-modified').textContent = `Güncellenen: ${overridesList.length} yapı`;
+            document.getElementById('dbm-stat-users').textContent = users.length;
+            document.getElementById('dbm-stat-logs').textContent = logs.length;
+            document.getElementById('dbm-stat-pdfs').textContent = Math.max(storedPdfs.length, (dbStatus.stats && dbStatus.stats.totalPdfs) || 0);
+
+            // LocalStorage boyut hesabı
+            const lsKeys = ['KENTVIZYON_USER_DIRECTORY_V1', 'KENTVIZYON_AUDIT_LOGS_V1', 'KENTVIZYON_DELTA_STATE_V1'];
+            let totalLsBytes = 0;
+            const lsDetails = lsKeys.map(key => {
+                const raw = localStorage.getItem(key) || '';
+                const bytes = raw.length * 2;
+                totalLsBytes += bytes;
+                return { key, bytes, raw };
+            });
+
+            document.getElementById('dbm-stat-size').textContent = `SQLite: ${dbStatus.dbSizeKB || 184.0} KB`;
+            document.getElementById('dbm-stat-cache-size').textContent = `Tarayıcı Önbelleği: ${(totalLsBytes / 1024).toFixed(1)} KB`;
+            document.getElementById('dbm-footer-sync-text').textContent =
+                `Son Veritabanı / Önbellek Kontrolü: ${formatDateTimeTR(dbStatus.lastSyncAt || new Date().toISOString())}`;
+
+            // 1. Şema Tablosu
+            const timelineCount = (dbStatus.stats && dbStatus.stats.totalTimelineRows) || (totalBuildings + overridesList.length);
+            const maliklerCount = (dbStatus.stats && dbStatus.stats.totalMaliklerRows) || overridesList.reduce((acc, o) => acc + (Array.isArray(o.malikler) ? o.malikler.length : 0), 0);
+
+            const schemaRows = [
+                { name: 'users', type: 'TABLE', desc: 'Kullanıcı hesapları ve PBKDF2/AES-256 anahtarları', count: users.length },
+                { name: 'user_permissions', type: 'TABLE', desc: 'Kullanıcı bazlı CBS ve yönetim yetki matrisi', count: users.length },
+                { name: 'buildings', type: 'TABLE', desc: '759 CBS riskli yapı envanteri, alan ve imar durumu', count: totalBuildings },
+                { name: 'building_stages_timeline', type: 'TABLE', desc: 'Yapıların dönüşüm aşamaları ve evrak geçmişi', count: timelineCount },
+                { name: 'building_malikler', type: 'TABLE', desc: 'Yapı kat malikleri ve tebligat takip listesi', count: maliklerCount },
+                { name: 'pdf_documents', type: 'TABLE', desc: 'Yüklenen resmi PDF tutanak arşivi', count: Math.max(storedPdfs.length, (dbStatus.stats && dbStatus.stats.totalPdfs) || 0) },
+                { name: 'audit_logs', type: 'TABLE', desc: 'Tarih/saat ve kullanıcı bazlı işlem geçmişi', count: logs.length },
+                { name: 'v_kullanici_islem_ozeti', type: 'VIEW', desc: 'Kullanıcı aktivite ve kategori kırılım özeti', count: users.length },
+                { name: 'v_ilce_yapi_ozeti', type: 'VIEW', desc: 'İlçe bazlı yapı, süreç ve hak kaybı özeti', count: 16 }
+            ];
+
+            document.getElementById('dbm-schema-tbody').innerHTML = schemaRows.map(r => `
+                <tr class="hover:bg-slate-50">
+                    <td class="py-2 px-3 font-mono font-bold text-indigo-700">${r.name}</td>
+                    <td class="py-2 px-3">
+                        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold ${r.type === 'VIEW' ? 'bg-teal-100 text-teal-800' : 'bg-indigo-100 text-indigo-800'}">${r.type}</span>
+                    </td>
+                    <td class="py-2 px-3 text-slate-600">${r.desc}</td>
+                    <td class="py-2 px-3 text-right font-extrabold text-slate-900">${r.count}</td>
+                </tr>
+            `).join('');
+
+            // İlçe Özeti View (SQLite'tan veya yerel çözülmüş GeoJSON'dan)
+            let districtRows = Array.isArray(dbStatus.districtView) && dbStatus.districtView.length > 0 ? dbStatus.districtView : [];
+            if (districtRows.length === 0 && window.GEOJSON_DATA && Array.isArray(window.GEOJSON_DATA.features)) {
+                const dMap = {};
+                window.GEOJSON_DATA.features.forEach((f, idx) => {
+                    const p = f.properties || {};
+                    const bId = String(p.uniqueId || p.ID || (idx + 1));
+                    const ov = overridesMap[bId];
+                    const dist = (p.ILCE_ADI || 'İzmir').trim();
+                    if (!dMap[dist]) dMap[dist] = { ilce_adi: dist, toplam_yapi: 0, isleme_alinmadi: 0, aktif: 0, hak_kaybi_yasayan_yapi: 0 };
+                    dMap[dist].toplam_yapi++;
+                    const stg = ov && ov.stage ? Number(ov.stage) : 1;
+                    if (stg === 1) dMap[dist].isleme_alinmadi++;
+                    else dMap[dist].aktif++;
+                    if (Number(p.MEVCUTLU_YAPI_ALANI || 0) > Number(p.ARTISLI_PARSEL_IMAR_ALANI || 0)) {
+                        dMap[dist].hak_kaybi_yasayan_yapi++;
+                    }
+                });
+                districtRows = Object.values(dMap).sort((a, b) => b.toplam_yapi - a.toplam_yapi);
+            }
+
+            document.getElementById('dbm-district-view-tbody').innerHTML = districtRows.map(d => {
+                const aktifCount = d.aktif !== undefined ? d.aktif : (Number(d.toplam_yapi || 0) - Number(d.isleme_alinmadi || 0));
+                return `
+                    <tr class="hover:bg-slate-50">
+                        <td class="py-2 px-3 font-bold text-slate-800">${d.ilce_adi}</td>
+                        <td class="py-2 px-3 text-center font-extrabold text-slate-900">${d.toplam_yapi}</td>
+                        <td class="py-2 px-3 text-center text-slate-600">${d.isleme_alinmadi}</td>
+                        <td class="py-2 px-3 text-center font-bold text-indigo-600">${aktifCount}</td>
+                        <td class="py-2 px-3 text-center font-bold text-rose-600">${d.hak_kaybi_yasayan_yapi}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            // 2. Güncellenen Yapılar (Overrides) Tablosu
+            const ovTbody = document.getElementById('dbm-overrides-tbody');
+            if (overridesList.length === 0) {
+                ovTbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="py-10 text-center text-slate-400">
+                            Henüz CBS Harita ekranında aşaması veya evrakı güncellenmiş bir yapı bulunmuyor. Tüm 759 yapı varsayılan (1. Aşama) durumunda.
+                        </td>
+                    </tr>
+                `;
+            } else {
+                ovTbody.innerHTML = overridesList.map(ov => `
+                    <tr class="hover:bg-slate-50">
+                        <td class="py-2.5 px-4 font-mono font-bold text-indigo-700">#${ov.id} (MAKS: ${ov.maks || ov.id})</td>
+                        <td class="py-2.5 px-3 font-bold text-slate-800">${ov.stageText || ov.stage}</td>
+                        <td class="py-2.5 px-3 text-slate-600">${ov.zoningStatusText || 'Uygun'}</td>
+                        <td class="py-2.5 px-3">${ov.tebligatGonderildi ? '<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">Gönderildi</span>' : '<span class="text-slate-400">Gönderilmedi</span>'}</td>
+                        <td class="py-2.5 px-3 font-semibold text-slate-700">${Array.isArray(ov.timeline) ? ov.timeline.length : 1} Aşama</td>
+                        <td class="py-2.5 px-4 font-mono text-slate-500">${formatDateTimeTR(ov.updatedAt)}</td>
+                    </tr>
+                `).join('');
+            }
+
+            // 3. Yerel Önbellek (localStorage & IndexedDB) Kartları
+            const keyTitles = {
+                'KENTVIZYON_USER_DIRECTORY_V1': { title: 'Kullanıcı Dizini & Yetki Önbelleği', desc: 'Kullanıcı hesapları, roller ve izin matrisi' },
+                'KENTVIZYON_AUDIT_LOGS_V1': { title: 'Denetim Günlüğü (Audit Log) Önbelleği', desc: 'Kullanıcı işlem geçmişi kayıtları' },
+                'KENTVIZYON_DELTA_STATE_V1': { title: 'Yapı Değişiklikleri (Delta) Önbelleği', desc: 'Haritada güncellenen bina aşama ve tebligat verileri' }
+            };
+            document.getElementById('dbm-localstorage-cards').innerHTML = lsDetails.map(item => {
+                const info = keyTitles[item.key] || { title: item.key, desc: '' };
+                return `
+                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-1.5">
+                        <div class="flex items-center justify-between">
+                            <span class="font-mono text-[10px] font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">${item.key}</span>
+                            <span class="text-[11px] font-extrabold text-slate-800">${(item.bytes / 1024).toFixed(2)} KB</span>
+                        </div>
+                        <div class="font-bold text-slate-800 text-xs">${info.title}</div>
+                        <div class="text-[11px] text-slate-500">${info.desc}</div>
+                    </div>
+                `;
+            }).join('');
+
+            const pdfTbody = document.getElementById('dbm-pdfs-tbody');
+            if (storedPdfs.length === 0) {
+                pdfTbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="py-8 text-center text-slate-400">
+                            Henüz yüklenmiş özel bir PDF evrakı bulunmuyor.
+                        </td>
+                    </tr>
+                `;
+            } else {
+                pdfTbody.innerHTML = storedPdfs.map(p => `
+                    <tr class="hover:bg-slate-50">
+                        <td class="py-2 px-4 font-mono text-purple-700 font-semibold">${p.id}</td>
+                        <td class="py-2 px-3 font-bold text-slate-800">${p.name || 'evrak.pdf'}</td>
+                        <td class="py-2 px-3 text-slate-600">${p.dataUrl ? (p.dataUrl.length / 1024).toFixed(1) + ' KB' : '-'}</td>
+                        <td class="py-2 px-4 font-mono text-slate-500">${formatDateTimeTR(p.createdAt)}</td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        // ── BAŞLATMA ───────────────────────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.__ACTIVE_AUTH_SESSION) {
+                document.getElementById('admin-user-label').textContent =
+                    window.__ACTIVE_AUTH_SESSION.displayName || window.__ACTIVE_AUTH_SESSION.username;
+            }
+
+            document.getElementById('btn-logout').addEventListener('click', () => {
+                if (window.AuthSecurity) window.AuthSecurity.clearSession();
+                window.location.replace('giris.html');
+            });
+
+            // Genel Audit log filtre dinleyicileri
+            ['audit-search-input', 'audit-filter-user', 'audit-filter-category', 'audit-filter-start', 'audit-filter-end'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('input', renderAuditTab);
+                    el.addEventListener('change', renderAuditTab);
+                }
+            });
+
+            // Kullanıcı Detay Modalı filtre dinleyicileri
+            ['uhm-search-input', 'uhm-filter-category', 'uhm-filter-start', 'uhm-filter-end'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('input', renderUserDetailLogs);
+                    el.addEventListener('change', renderUserDetailLogs);
+                }
+            });
+
+            // Modal dışına tıklama ve ESC ile kapatma
+            const uhmModal = document.getElementById('user-history-modal');
+            uhmModal.addEventListener('click', (e) => {
+                if (e.target === uhmModal) closeUserDetailModal();
+            });
+            const dbmModal = document.getElementById('db-inspector-modal');
+            dbmModal.addEventListener('click', (e) => {
+                if (e.target === dbmModal) closeDbInspectorModal();
+            });
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeUserDetailModal();
+                    closeDbInspectorModal();
+                }
+            });
+
+            window.addEventListener('kentvizyon:db-synced', (ev) => {
+                const dot = document.getElementById('db-status-dot');
+                const txt = document.getElementById('db-status-text');
+                if (dot && txt && ev.detail && ev.detail.connected) {
+                    dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
+                    txt.textContent = 'SQLite Aktif (kentvizyon.db)';
+                }
+                renderDashboardTab();
+                renderAuditTab();
+                renderUsersTab();
+                renderPermissionsTab();
+                if (activeDetailUsername) renderUserDetailLogs();
+            });
+
+            renderDashboardTab();
+        });
+    </script>
+</body>
+</html>

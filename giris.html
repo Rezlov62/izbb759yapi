@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Giriş Yap | İzmir KentVizyon - Kentsel Dönüşüm ve Riskli Yapı Takip Sistemi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Şifreli Veri Paketi ve Güvenlik Katmanı -->
+    <script src="binalar_data.js"></script>
+    <script src="auth_security.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-6px); }
+            40%, 80% { transform: translateX(6px); }
+        }
+
+        .animate-shake {
+            animation: shake 0.35s ease-in-out;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen bg-slate-950 text-slate-800 flex items-center justify-center p-4 relative overflow-hidden">
+
+    <!-- Arka Plan Dekoratif Katman -->
+    <div class="absolute inset-0 pointer-events-none overflow-hidden">
+        <div class="absolute -top-32 -left-32 w-96 h-96 bg-teal-600/15 rounded-full blur-3xl"></div>
+        <div class="absolute -bottom-32 -right-32 w-96 h-96 bg-blue-600/15 rounded-full blur-3xl"></div>
+        <div class="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] opacity-40"></div>
+    </div>
+
+    <!-- Giriş Kartı -->
+    <div id="login-card" class="relative z-10 bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-800/20">
+        <!-- Üst Başlık Alanı -->
+        <div class="bg-slate-900 text-white px-7 py-7 text-center relative border-b border-slate-800">
+            <div class="w-12 h-12 bg-teal-600/20 border border-teal-500/40 rounded-2xl mx-auto flex items-center justify-center text-teal-400 font-bold text-lg shadow-inner mb-3">
+                <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <h1 class="text-base font-extrabold tracking-tight text-white">İzmir KentVizyon GIS</h1>
+            <p class="text-xs text-slate-300 mt-1">Kentsel Dönüşüm ve Riskli Yapı Takip Sistemi</p>
+            <div class="mt-3 inline-flex items-center space-x-1.5 bg-slate-800/90 border border-slate-700 text-teal-300 text-[10px] font-semibold px-2.5 py-1 rounded-full">
+                <i class="fa-solid fa-lock text-[9px]"></i>
+                <span>AES-256 Şifreli Veri Koruması Aktif</span>
+            </div>
+        </div>
+
+        <!-- Giriş Formu -->
+        <form id="login-form" class="p-7 space-y-4" autocomplete="off">
+            <!-- Hata Mesajı Kutusu -->
+            <div id="login-error-box" class="hidden bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-3 text-xs font-semibold flex items-center space-x-2">
+                <i class="fa-solid fa-circle-exclamation text-rose-600 text-sm shrink-0"></i>
+                <span id="login-error-text">Kullanıcı adı veya şifre hatalı!</span>
+            </div>
+
+            <div>
+                <label for="login-username" class="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
+                    Kullanıcı Adı
+                </label>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+                        <i class="fa-solid fa-user text-xs"></i>
+                    </span>
+                    <input type="text" id="login-username" required autofocus
+                        class="w-full bg-slate-50 border border-slate-200 text-slate-900 text-xs rounded-xl pl-9 pr-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:bg-white transition font-medium"
+                        placeholder="Kullanıcı adınızı girin">
+                </div>
+            </div>
+
+            <div>
+                <label for="login-password" class="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
+                    Şifre
+                </label>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
+                        <i class="fa-solid fa-key text-xs"></i>
+                    </span>
+                    <input type="password" id="login-password" required
+                        class="w-full bg-slate-50 border border-slate-200 text-slate-900 text-xs rounded-xl pl-9 pr-10 py-3 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:bg-white transition font-medium"
+                        placeholder="••••••••">
+                    <button type="button" id="toggle-password-btn" tabindex="-1"
+                        class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 transition"
+                        title="Şifreyi Göster/Gizle">
+                        <i id="toggle-password-icon" class="fa-solid fa-eye text-xs"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="pt-1">
+                <button type="submit" id="login-submit-btn"
+                    class="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-3 rounded-xl transition shadow-md text-xs flex items-center justify-center space-x-2">
+                    <span id="login-submit-text">Doğrula ve Sisteme Giriş Yap</span>
+                    <i id="login-submit-icon" class="fa-solid fa-arrow-right-to-bracket text-xs"></i>
+                </button>
+            </div>
+        </form>
+
+        <!-- Alt Bilgi -->
+        <div class="bg-slate-50 px-7 py-3.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+            <span>İzmir Büyükşehir Belediyesi • CBS</span>
+            <span class="font-medium text-slate-500">Yetkisiz erişim engellenmiştir</span>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const loginForm = document.getElementById('login-form');
+            const loginCard = document.getElementById('login-card');
+            const usernameInput = document.getElementById('login-username');
+            const passwordInput = document.getElementById('login-password');
+            const togglePasswordBtn = document.getElementById('toggle-password-btn');
+            const togglePasswordIcon = document.getElementById('toggle-password-icon');
+            const errorBox = document.getElementById('login-error-box');
+            const errorText = document.getElementById('login-error-text');
+            const submitBtn = document.getElementById('login-submit-btn');
+            const submitText = document.getElementById('login-submit-text');
+            const submitIcon = document.getElementById('login-submit-icon');
+
+            // Şifre göster/gizle
+            togglePasswordBtn.addEventListener('click', () => {
+                const isPwd = passwordInput.type === 'password';
+                passwordInput.type = isPwd ? 'text' : 'password';
+                togglePasswordIcon.className = isPwd ? 'fa-solid fa-eye-slash text-xs text-teal-600' : 'fa-solid fa-eye text-xs';
+            });
+
+            function showError(msg) {
+                errorText.textContent = msg;
+                errorBox.classList.remove('hidden');
+                loginCard.classList.remove('animate-shake');
+                void loginCard.offsetWidth;
+                loginCard.classList.add('animate-shake');
+            }
+
+            loginForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                errorBox.classList.add('hidden');
+
+                const username = usernameInput.value.trim();
+                const password = passwordInput.value;
+
+                if (!username || !password) {
+                    showError('Lütfen kullanıcı adı ve şifrenizi girin.');
+                    return;
+                }
+
+                submitBtn.disabled = true;
+                submitText.textContent = 'Şifre Çözülüyor ve Doğrulanıyor...';
+                submitIcon.className = 'fa-solid fa-spinner fa-spin text-xs';
+
+                setTimeout(() => {
+                    const result = window.AuthSecurity.authenticate(username, password);
+                    if (!result.ok) {
+                        submitBtn.disabled = false;
+                        submitText.textContent = 'Doğrula ve Sisteme Giriş Yap';
+                        submitIcon.className = 'fa-solid fa-arrow-right-to-bracket text-xs';
+                        showError(result.error || 'Kullanıcı adı veya şifre hatalı!');
+                        passwordInput.value = '';
+                        passwordInput.focus();
+                        return;
+                    }
+
+                    submitText.textContent = 'Giriş Başarılı! Yönlendiriliyor...';
+                    submitIcon.className = 'fa-solid fa-check text-xs text-teal-400';
+                    window.location.href = 'v0001.html';
+                }, 60);
+            });
+        });
+    </script>
+</body>
+
+</html>
+

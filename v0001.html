@@ -1,0 +1,3175 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>İzmir KentVizyon - Kentsel Dönüşüm ve Riskli Yapı Takip Sistemi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet: unpkg birincil, cdnjs yedek CDN (aşağıdaki JS yedeğiyle aynı mantık) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        if (typeof L === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"><\/script>');
+        }
+    </script>
+    <!-- Şifreli Yerel GeoJSON Verisi ve AES-256 Güvenlik Katmanı -->
+    <script src="binalar_data.js"></script>
+    <script src="auth_security.js"></script>
+    <script>
+        window.__ACTIVE_AUTH_SESSION = window.AuthSecurity ? window.AuthSecurity.unlockAndLoadGeoJSON() : null;
+        if (!window.__ACTIVE_AUTH_SESSION) {
+            window.location.replace('giris.html');
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f8fafc;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        @keyframes pulse-red {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        .animate-urgent {
+            animation: pulse-red 1.2s infinite;
+        }
+
+        #map {
+            z-index: 1;
+        }
+
+        .leaflet-control-container {
+            z-index: 20;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 text-slate-700 h-screen flex flex-col overflow-hidden">
+
+    <!-- Ana Uygulama Gövdesi -->
+    <div id="main-app"
+        class="flex-1 flex flex-col overflow-hidden transition-opacity duration-500">
+
+        <!-- Header & Ribbon Menü -->
+        <header class="bg-slate-900 text-white shadow-xs flex flex-col shrink-0 border-b border-slate-800">
+            <div class="flex items-center justify-between px-6 py-2.5">
+                <div class="flex items-center space-x-2.5">
+                    <div class="bg-teal-600 p-1.5 rounded-lg text-white font-bold">
+                        <i class="fa-solid fa-city text-sm"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xs font-bold tracking-tight">İzmir KentVizyon GIS</h1>
+                        <p class="text-[9px] text-slate-400">Kentsel Dönüşüm ve Riskli Yapı Takip Sistemi</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2 sm:space-x-3">
+                    <div
+                        class="hidden sm:flex items-center space-x-2 text-[11px] bg-slate-800/80 px-3 py-1 rounded-lg border border-slate-700">
+                        <span class="w-1.5 h-1.5 rounded-full bg-teal-400"></span>
+                        <span class="text-slate-300">Oturum: <strong class="text-white"
+                                id="current-user-display">Yönetici</strong></span>
+                    </div>
+                    <button id="logout-btn"
+                        class="bg-slate-800 hover:bg-rose-950/60 hover:text-rose-200 text-slate-300 px-2.5 py-1 rounded-lg text-[11px] transition flex items-center space-x-1.5 border border-slate-700">
+                        <i class="fa-solid fa-power-off text-[10px]"></i>
+                        <span>Çıkış</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Ribbon Alt Bar -->
+            <div
+                class="bg-slate-950 px-4 sm:px-6 py-1.5 flex items-center justify-between gap-2 text-[11px] border-t border-slate-800">
+                <div class="flex items-center space-x-1 sm:space-x-1.5 overflow-x-auto py-0.5 min-w-0">
+                    <button id="btn-open-search"
+                        class="whitespace-nowrap shrink-0 bg-slate-900 hover:bg-slate-800 text-slate-200 px-3 py-1.5 rounded-lg font-medium transition flex items-center space-x-1.5 border border-slate-800">
+                        <i class="fa-solid fa-magnifying-glass text-teal-400 text-[10px]"></i>
+                        <span>Detaylı Arama</span>
+                    </button>
+                    <button id="btn-open-tebligat"
+                        class="whitespace-nowrap shrink-0 bg-teal-700 hover:bg-teal-600 text-white px-3 py-1.5 rounded-lg font-medium transition flex items-center space-x-1.5 shadow-xs">
+                        <i class="fa-solid fa-envelope-open-text text-white text-[10px]"></i>
+                        <span>Tebligat Takip Sistemi</span>
+                    </button>
+                    <a id="btn-goto-admin-panel" href="yonetici.html"
+                        class="whitespace-nowrap shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg font-semibold transition flex items-center space-x-1.5 shadow-xs border border-indigo-500">
+                        <i class="fa-solid fa-users-gear text-white text-[10px]"></i>
+                        <span>Sistem & Kullanıcı Yönetimi</span>
+                    </a>
+                    <button id="btn-open-exec"
+                        class="whitespace-nowrap shrink-0 bg-slate-900 hover:bg-slate-800 text-slate-200 px-3 py-1.5 rounded-lg font-medium transition flex items-center space-x-1.5 border border-slate-800">
+                        <i class="fa-solid fa-chart-pie text-teal-400 text-[10px]"></i>
+                        <span>Yönetici Özet Sayfası</span>
+                    </button>
+                    <button id="btn-open-announcements"
+                        class="whitespace-nowrap shrink-0 bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg font-medium transition flex items-center space-x-1.5 shadow-xs relative">
+                        <i class="fa-solid fa-bullhorn text-white text-[10px]"></i>
+                        <span>Duyurular & Bildirimler</span>
+                        <span class="bg-white text-amber-900 font-bold px-1.5 py-0.2 rounded-full text-[9px]"
+                            id="announcement-badge-count">3</span>
+                    </button>
+                </div>
+                <!-- Açılır Filtreler Menüsü (Dropdown) -->
+                <div class="relative inline-block text-left shrink-0" id="filter-dropdown-wrapper">
+                    <button id="filter-dropdown-btn" type="button"
+                        class="whitespace-nowrap bg-slate-900 hover:bg-slate-800 text-slate-200 px-3.5 py-1.5 rounded-lg font-medium transition flex items-center space-x-2 border border-slate-700 shadow-xs focus:outline-none focus:ring-1 focus:ring-teal-400 cursor-pointer">
+                        <i class="fa-solid fa-filter text-teal-400 text-xs"></i>
+                        <span class="text-xs font-semibold">Filtreler</span>
+                        <span id="active-filter-indicator"
+                            class="hidden bg-teal-500 text-slate-950 font-bold text-[9px] px-1.5 py-0.2 rounded-full">0</span>
+                        <i class="fa-solid fa-chevron-down text-slate-400 text-[10px] transition-transform duration-200"
+                            id="filter-dropdown-arrow"></i>
+                    </button>
+
+                    <!-- Aşağı Açılır Menü -->
+                    <div id="filter-dropdown-menu"
+                        class="hidden absolute right-0 mt-2 w-80 sm:w-96 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl shadow-2xl z-[1500] p-4 text-xs space-y-3.5">
+
+                        <!-- Başlık ve Sıfırlama Butonu -->
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                            <span class="font-bold text-slate-200 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-sliders text-teal-400"></i>
+                                <span>Harita Filtreleri</span>
+                            </span>
+                            <button id="btn-reset-filters" type="button"
+                                class="text-[10px] text-teal-400 hover:text-teal-300 transition flex items-center space-x-1 font-medium cursor-pointer">
+                                <i class="fa-solid fa-rotate-left"></i>
+                                <span>Filtreleri Sıfırla</span>
+                            </button>
+                        </div>
+
+                        <!-- 1. Filtre: İlçe Seçimi -->
+                        <div>
+                            <label
+                                class="block text-[10px] text-slate-400 font-semibold uppercase mb-1 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-location-dot text-teal-400 text-[10px]"></i>
+                                <span>İlçe</span>
+                            </label>
+                            <select id="district-filter"
+                                class="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-400">
+                                <option value="all">Tüm İlçeler</option>
+                            </select>
+                        </div>
+
+                        <!-- 2. Filtre: Süreç Kademesi -->
+                        <div>
+                            <label
+                                class="block text-[10px] text-slate-400 font-semibold uppercase mb-1 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-list-check text-teal-400 text-[10px]"></i>
+                                <span>Süreç Kademesi</span>
+                            </label>
+                            <select id="stage-filter"
+                                class="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-400">
+                                <option value="all">Tüm Süreçler</option>
+                                <option value="1">1) İşleme alınmadı</option>
+                                <option value="2">2) İşlem yapılması imar olarak sorunlu</option>
+                                <option value="3">3) İşleme alındı</option>
+                                <option value="4">4) İstemli süreç başladı</option>
+                                <option value="5">5) Resen süreç başladı</option>
+                                <option value="7">7) İşlem tamamlandı</option>
+                            </select>
+                        </div>
+
+                        <!-- 3. Filtre: Uyumsuzluk & İmar Notu -->
+                        <div>
+                            <label
+                                class="block text-[10px] text-slate-400 font-semibold uppercase mb-1 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-triangle-exclamation text-teal-400 text-[10px]"></i>
+                                <span>Uyumsuzluk ve İmar Durumu Notu</span>
+                            </label>
+                            <select id="zoning-filter"
+                                class="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-400">
+                                <option value="all">Tümü (Tüm İmar Durumları)</option>
+                                <option value="uygun">Uygun (Yeşil)</option>
+                                <option value="yol_uzerinde">Yol Üzerinde (Kırmızı)</option>
+                                <option value="donati_alani_icerisinde">Donatı Alanı İçerisinde (Kırmızı)</option>
+                                <option value="yan_parsellere_tasma">Yan Parsellere Taşma (Sarı)</option>
+                                <option value="yola_kaldirima_tasma">Yola / Kaldırıma Taşma (Sarı)</option>
+                                <option value="cekme_mesafesi_ihlali">Çekme Mesafesi İhlali (Sarı)</option>
+                            </select>
+                        </div>
+
+                        <!-- 4. Filtre: Hak Kaybı Durumu -->
+                        <div>
+                            <label
+                                class="block text-[10px] text-slate-400 font-semibold uppercase mb-1 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-scale-unbalanced text-teal-400 text-[10px]"></i>
+                                <span>Hak Kaybı Durumu</span>
+                            </label>
+                            <select id="area-filter"
+                                class="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-400">
+                                <option value="all">Tümü (Filtresiz)</option>
+                                <option value="riskli">Hak Kaybı Yaşayanlar</option>
+                                <option value="uygun">Hak Kaybı Yaşamayanlar</option>
+                            </select>
+                        </div>
+
+                        <!-- Menü Alt Bilgi ve Kapatma Butonu -->
+                        <div
+                            class="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+                            <span>Sonuç: <strong id="filter-dropdown-count" class="text-teal-400">759
+                                    Yapı</strong></span>
+                            <button id="btn-close-filter-dropdown" type="button"
+                                class="bg-teal-600 hover:bg-teal-500 text-white px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer">
+                                Kapat
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Ana Çalışma Alanı -->
+        <main class="flex-1 flex flex-col lg:flex-row overflow-hidden p-3 gap-3">
+
+            <!-- Sol Panel: Canlı Harita -->
+            <div
+                class="flex-1 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col overflow-hidden relative">
+                <div
+                    class="bg-slate-900 text-white border-b border-slate-800 px-4 py-2.5 flex items-center justify-between z-10 text-[11px]">
+                    <div class="flex items-center space-x-2">
+                        <span class="font-bold"><i class="fa-solid fa-map-location-dot text-teal-400 mr-1.5"></i> İzmir
+                            Kentsel Dönüşüm Haritası</span>
+                        <span
+                            class="bg-slate-800 text-teal-300 text-[10px] px-2 py-0.5 rounded-md font-semibold border border-slate-700"
+                            id="active-count-badge">Yapılar Listeleniyor</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 hidden sm:block">Pinlere tıklayarak yapı bilgilerini
+                        görüntüleyin</div>
+                </div>
+
+                <!-- Leaflet Harita Konteyneri -->
+                <div class="flex-1 relative w-full h-full min-h-[400px]">
+                    <div id="map" class="absolute inset-0 w-full h-full"></div>
+
+                    <!-- Harita Lejantı -->
+                    <div
+                        class="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm border border-slate-200 p-3 rounded-xl shadow-md text-[11px] space-y-2 min-w-[280px] z-[400] text-slate-700">
+                        <div
+                            class="font-bold text-slate-900 pb-1.5 border-b border-slate-100 flex items-center justify-between">
+                            <span class="flex items-center space-x-1.5 text-xs">
+                                <i class="fa-solid fa-layer-group text-teal-600"></i>
+                                <span>İki Renkli Pin Lejantı</span>
+                            </span>
+                            <span
+                                class="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono border border-slate-200">Çift
+                                Katman</span>
+                        </div>
+
+                        <!-- Pin Anatomisi Gösterimi -->
+                        <div class="flex items-center space-x-2.5 p-2 bg-slate-50 rounded-lg border border-slate-200">
+                            <div class="w-7 h-7 rounded-full border-2 border-white shadow-sm shrink-0 flex items-center justify-center relative"
+                                style="background: linear-gradient(90deg, #2563eb 50%, #22c55e 50%);">
+                                <div
+                                    style="position: absolute; left: 50%; top: 0; bottom: 0; width: 1.5px; background: rgba(255,255,255,0.9); transform: translateX(-50%);">
+                                </div>
+                                <div
+                                    class="w-3.5 h-3.5 rounded-full bg-slate-900/80 border border-white z-10 flex items-center justify-center">
+                                    <i class="fa-solid fa-building text-[6px] text-white"></i>
+                                </div>
+                            </div>
+                            <div class="text-[9.5px] leading-snug">
+                                <div><strong class="text-slate-900">Sol Yarım:</strong> Süreç Kademesi</div>
+                                <div><strong class="text-slate-900">Sağ Yarım:</strong> İmar Durumu Notu</div>
+                            </div>
+                        </div>
+
+                        <!-- Sağ Taraf: İmar Durumu Renkleri -->
+                        <div class="space-y-1 pt-0.5">
+                            <div
+                                class="font-bold text-slate-800 text-[10px] uppercase tracking-wider flex items-center justify-between">
+                                <span>Sağ Yarım (İmar Notu)</span>
+                                <span class="text-[9px] text-slate-400">3 Renk</span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-1">
+                                <div class="flex items-center space-x-1 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-1"
+                                    title="Uygun Yapılar">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-[#22c55e] shrink-0"></span>
+                                    <span class="text-[9px] font-semibold text-emerald-900 truncate">Uygun</span>
+                                </div>
+                                <div class="flex items-center space-x-1 bg-amber-50 border border-amber-200 rounded px-1.5 py-1"
+                                    title="Yola/Yan Parsellere Taşma, Çekme İhlali">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-[#eab308] shrink-0"></span>
+                                    <span class="text-[9px] font-semibold text-amber-900 truncate">Diğer İhlal</span>
+                                </div>
+                                <div class="flex items-center space-x-1 bg-rose-50 border border-rose-200 rounded px-1.5 py-1"
+                                    title="Yol Üzerinde ve Donatı Alanında Olanlar">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-[#ef4444] shrink-0"></span>
+                                    <span class="text-[9px] font-semibold text-rose-900 truncate">Yol/Donatı</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sol Taraf: Süreç Kademeleri Renkleri -->
+                        <div class="space-y-1 pt-1 border-t border-slate-100">
+                            <div class="font-bold text-slate-800 text-[10px] uppercase tracking-wider">Sol Yarım (Süreç
+                                Kademesi)</div>
+                            <div class="grid grid-cols-2 gap-x-2 gap-y-1">
+                                <div class="flex items-center space-x-1.5"><span
+                                        class="w-2.5 h-2.5 rounded-full bg-[#64748b] shrink-0"></span><span
+                                        class="text-slate-600 truncate">1) İşleme alınmadı</span></div>
+                                <div class="flex items-center space-x-1.5"><span
+                                        class="w-2.5 h-2.5 rounded-full bg-[#9333ea] shrink-0"></span><span
+                                        class="text-slate-600 truncate">2) İmar sorunlu</span></div>
+                                <div class="flex items-center space-x-1.5"><span
+                                        class="w-2.5 h-2.5 rounded-full bg-[#06b6d4] shrink-0"></span><span
+                                        class="text-slate-600 truncate">3) İşleme alındı</span></div>
+                                <div class="flex items-center space-x-1.5"><span
+                                        class="w-2.5 h-2.5 rounded-full bg-[#2563eb] shrink-0"></span><span
+                                        class="text-slate-600 truncate">4) İstemli süreç</span></div>
+                                <div class="flex items-center space-x-1.5"><span
+                                        class="w-2.5 h-2.5 rounded-full bg-[#d946ef] shrink-0"></span><span
+                                        class="text-slate-600 truncate">5) Resen süreç</span></div>
+                                <div class="flex items-center space-x-1.5"><span
+                                        class="w-2.5 h-2.5 rounded-full bg-[#4338ca] shrink-0"></span><span
+                                        class="text-slate-600 truncate">7) Tamamlandı</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sağ Panel: Yapı Detay Kartı -->
+            <div
+                class="w-full lg:w-4/12 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col overflow-hidden">
+                <div
+                    class="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between border-b border-slate-800">
+                    <h3 class="font-bold text-[11px] flex items-center space-x-1.5">
+                        <i class="fa-solid fa-circle-info text-teal-400"></i>
+                        <span>Yapı & Süreç Bilgi Paneli</span>
+                    </h3>
+                    <span class="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700"
+                        id="selected-id-tag">Seçim Yapılmadı</span>
+                </div>
+                <div id="sidebar-detail-content" class="p-4 flex-1 overflow-y-auto space-y-3 text-[11px]">
+                    <div class="text-center py-24 text-slate-400 space-y-2">
+                        <i class="fa-solid fa-hand-pointer text-2xl text-teal-600"></i>
+                        <p class="text-[11px]">Harita üzerindeki bir yapı pinine tıklayarak detaylı yapı kartını
+                            görüntüleyin.</p>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Modallar: Tebligat Takip Sistemi -->
+    <div id="tebligat-modal"
+        class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[2000] hidden flex items-center justify-center p-4">
+        <div
+            class="bg-white rounded-2xl shadow-xl max-w-5xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[88vh]">
+            <div class="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between shrink-0">
+                <h3 class="font-bold text-xs flex items-center space-x-2">
+                    <i class="fa-solid fa-envelope-open-text text-teal-300 text-sm"></i>
+                    <span>Tebligat Takip Sistemi</span>
+                </h3>
+                <button class="close-modal-btn text-slate-300 hover:text-white text-base"
+                    data-target="tebligat-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="bg-slate-950 px-5 pt-2 flex space-x-2 border-b border-slate-800 shrink-0 overflow-x-auto">
+                <button onclick="switchTebligatTab(1)" id="teb-tab-btn-1"
+                    class="px-4 py-2 text-xs font-bold rounded-t-xl bg-white text-slate-900 transition flex items-center space-x-1.5 shadow-2xs whitespace-nowrap">
+                    <i class="fa-solid fa-paper-plane text-teal-600"></i>
+                    <span>1. Aktif Giden / İşleme Alınanlar</span>
+                </button>
+                <button onclick="switchTebligatTab(2)" id="teb-tab-btn-2"
+                    class="px-4 py-2 text-xs font-semibold rounded-t-xl bg-slate-900 hover:bg-slate-800 text-slate-300 transition flex items-center space-x-1.5 whitespace-nowrap">
+                    <i class="fa-solid fa-clock-rotate-left text-teal-400"></i>
+                    <span>2. Tebligatı Yollanan ama İşlemi Tamamlanmayanlar</span>
+                </button>
+                <button onclick="switchTebligatTab(3)" id="teb-tab-btn-3"
+                    class="px-4 py-2 text-xs font-semibold rounded-t-xl bg-slate-900 hover:bg-slate-800 text-slate-300 transition flex items-center space-x-1.5 whitespace-nowrap">
+                    <i class="fa-solid fa-hourglass-half text-amber-400"></i>
+                    <span>3. 90 Günlük Geri Sayım & Alarmlar</span>
+                </button>
+            </div>
+
+            <div class="p-5 space-y-4 overflow-y-auto bg-slate-50 text-[11px] flex-1">
+                <div id="teb-tab-content-1" class="space-y-3">
+                    <div
+                        class="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                        <span class="text-slate-700 font-semibold text-[11px]">İşleme Alınan Yapılar (Sadece "İşleme
+                            Alındı" aşamasındakiler)</span>
+                        <div class="flex items-center space-x-3">
+                            <button id="btn-toplu-tebligat" onclick="handleTopluTebligatGonder()"
+                                class="bg-teal-700 hover:bg-teal-800 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-2xs transition flex items-center space-x-1.5">
+                                <i class="fa-solid fa-paper-plane text-[9px]"></i>
+                                <span>Toplu Tebligat Gönder</span>
+                            </button>
+                            <span class="text-slate-500 font-medium text-[10px]">Toplam Liste: <strong
+                                    class="text-slate-900" id="count-tab-1">0</strong></span>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr
+                                    class="bg-slate-100 text-slate-700 uppercase text-[10px] font-bold border-b border-slate-200">
+                                    <th class="p-3">MAKS</th>
+                                    <th class="p-3">İlçe</th>
+                                    <th class="p-3">Ulaşan Malik / Toplam Malik</th>
+                                    <th class="p-3">Evrak</th>
+                                    <th class="p-3 text-right">Aksiyon</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-tab-1" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="teb-tab-content-2" class="space-y-3 hidden">
+                    <div
+                        class="bg-teal-50 border border-teal-200 text-teal-900 p-3 rounded-xl flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-solid fa-clock-rotate-left text-teal-700"></i>
+                            <span>Tebligatı yollanmış fakat tüm maliklere henüz ulaşmamış binalar.</span>
+                        </div>
+                        <span class="font-bold bg-white px-2.5 py-1 rounded border border-teal-200 text-xs"
+                            id="count-tab-2">0 Yapı</span>
+                    </div>
+                    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr
+                                    class="bg-slate-100 text-slate-700 uppercase text-[10px] font-bold border-b border-slate-200">
+                                    <th class="p-3">MAKS</th>
+                                    <th class="p-3">İlçe</th>
+                                    <th class="p-3">Ulaşan Malik / Toplam Malik</th>
+                                    <th class="p-3 text-right">Malik Listesi Detay</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-tab-2" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="teb-tab-content-3" class="space-y-3 hidden">
+                    <div
+                        class="bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded-xl flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-solid fa-hourglass-half text-amber-600"></i>
+                            <span>90 Günlük yasal süre takibi (Son 10 gün: Sarı, Son 5 gün: Kırmızı, Dolan: Mor).</span>
+                        </div>
+                        <span class="font-bold bg-white px-2.5 py-1 rounded border border-amber-200 text-xs"
+                            id="count-tab-3">0 Yapı</span>
+                    </div>
+                    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr
+                                    class="bg-slate-100 text-slate-700 uppercase text-[10px] font-bold border-b border-slate-200">
+                                    <th class="p-3">MAKS & İlçe</th>
+                                    <th class="p-3">Tebligat Tamamlanma Tarihi</th>
+                                    <th class="p-3">Kalan Süre (90 Gün)</th>
+                                    <th class="p-3 text-right">Evrak</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-tab-3" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white p-3 border-t border-slate-200 flex justify-end shrink-0">
+                <button
+                    class="close-modal-btn bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-medium shadow-2xs"
+                    data-target="tebligat-modal">Kapat</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Malik Modalı -->
+    <div id="malik-modal"
+        class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[2100] hidden flex items-center justify-center p-4">
+        <div
+            class="bg-white rounded-xl shadow-xl max-w-lg w-full overflow-hidden border border-slate-200 flex flex-col max-h-[85vh]">
+            <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between shrink-0">
+                <h3 class="font-bold text-xs flex items-center space-x-1.5">
+                    <i class="fa-solid fa-users text-teal-300"></i>
+                    <span id="malik-modal-title">Kat Malikleri Tebligat Durumu</span>
+                </h3>
+                <button class="close-modal-btn text-slate-300 hover:text-white" data-target="malik-modal"><i
+                        class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-4 space-y-3 overflow-y-auto bg-slate-50 text-[11px] flex-1" id="malik-modal-body"></div>
+            <div class="bg-white p-3 border-t border-slate-200 flex justify-end shrink-0">
+                <button
+                    class="close-modal-btn bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-medium"
+                    data-target="malik-modal">Kapat</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Duyurular & Bildirimler Modalı -->
+    <div id="announcements-modal"
+        class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[2000] hidden flex items-center justify-center p-4">
+        <div
+            class="bg-white rounded-2xl shadow-xl max-w-xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[85vh]">
+            <div class="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between shrink-0">
+                <h3 class="font-bold text-xs flex items-center space-x-2">
+                    <i class="fa-solid fa-bullhorn text-amber-300 text-sm"></i>
+                    <span>Duyurular & Kritik 90 Gün Bildirimleri</span>
+                </h3>
+                <button class="close-modal-btn text-slate-300 hover:text-white text-base"
+                    data-target="announcements-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-5 space-y-3 overflow-y-auto bg-slate-50 text-[11px] flex-1" id="announcements-modal-body">
+            </div>
+            <div class="bg-white p-3 border-t border-slate-200 flex justify-end shrink-0">
+                <button
+                    class="close-modal-btn bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-medium shadow-2xs"
+                    data-target="announcements-modal">Kapat</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Yetkisiz İşlem Uyarısı -->
+    <div id="unauthorized-modal"
+        class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[2200] hidden flex items-center justify-center p-4">
+        <div
+            class="bg-white rounded-2xl shadow-xl max-w-sm w-full overflow-hidden border border-slate-200 text-center p-6 space-y-4">
+            <div
+                class="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl mx-auto flex items-center justify-center text-lg shadow-2xs border border-amber-100">
+                <i class="fa-solid fa-lock"></i>
+            </div>
+            <div>
+                <h3 class="font-bold text-slate-900 text-sm">Salt Görüntüleme Yetkisi</h3>
+                <p class="text-[11px] text-slate-500 mt-1" id="unauthorized-msg">Bu işlem yalnızca <strong
+                        class="text-slate-800">Yönetici</strong> rolüne açık bir işlemdir.</p>
+            </div>
+            <button
+                class="close-modal-btn w-full bg-slate-900 hover:bg-slate-800 text-white py-2 rounded-xl text-xs font-medium transition shadow-2xs"
+                data-target="unauthorized-modal">Tamam</button>
+        </div>
+    </div>
+
+    <!-- PDF Önizleme Modalı -->
+    <div id="pdf-viewer-modal"
+        class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[2000] hidden flex items-center justify-center p-4">
+        <div
+            class="bg-white rounded-2xl shadow-xl max-w-4xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[92vh]">
+            <div class="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between shrink-0">
+                <div class="flex items-center space-x-2">
+                    <div class="bg-red-500 text-white p-1 rounded font-bold text-xs"><i
+                            class="fa-solid fa-file-pdf"></i></div>
+                    <div>
+                        <h3 class="font-bold text-xs" id="pdf-viewer-title">Evrak Önizleme</h3>
+                        <p class="text-[9px] text-slate-400">İzmir KentVizyon Güvenli Belge Arşivi</p>
+                    </div>
+                </div>
+                <button class="close-modal-btn text-slate-300 hover:text-white text-base"
+                    data-target="pdf-viewer-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-4 bg-slate-100 flex-1 overflow-y-auto flex flex-col space-y-3">
+                <div
+                    class="bg-white rounded-xl shadow-xs border border-slate-200 w-full flex-1 min-h-[450px] flex flex-col overflow-hidden relative">
+                    <div
+                        class="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between text-[10px] text-slate-600">
+                        <span class="font-semibold" id="pdf-file-name-display">belge_adi.pdf</span>
+                        <span id="pdf-modal-access-text" class="text-teal-700 font-medium">Görüntüleme Aktif</span>
+                    </div>
+                    <div class="flex-1 w-full bg-slate-900 flex items-center justify-center relative">
+                        <object id="pdf-object-frame" data="" type="application/pdf"
+                            class="w-full h-full min-h-[400px]">
+                            <div class="text-center p-8 text-white space-y-3">
+                                <i class="fa-solid fa-file-pdf text-4xl text-red-500"></i>
+                                <p class="text-xs">Tarayıcınız PDF önizlemesini doğrudan desteklemiyor.</p>
+                                <a id="pdf-fallback-download-link" href="#" target="_blank"
+                                    class="inline-block bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-xs font-semibold">PDF
+                                    Belgesini Aç / İndir</a>
+                            </div>
+                        </object>
+                    </div>
+                </div>
+
+                <div id="pdf-manager-admin-area"
+                    class="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between hidden">
+                    <div class="flex items-center space-x-2">
+                        <label class="text-[10px] font-semibold text-slate-700 uppercase">Yeni PDF Yükle /
+                            Değiştir:</label>
+                        <input type="file" id="admin-pdf-replace-input" accept=".pdf"
+                            class="bg-slate-50 border border-slate-200 rounded-lg p-1 text-[10px] file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:font-semibold file:bg-slate-100 file:text-slate-700">
+                    </div>
+                    <button onclick="handleAdminPdfReplace()"
+                        class="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg text-[10px] font-medium shadow-2xs">Güncelle</button>
+                </div>
+
+                <div class="flex justify-end space-x-2 pt-1">
+                    <button onclick="alert('PDF belgesi cihazınıza başarıyla indiriliyor...')"
+                        class="bg-slate-900 hover:bg-slate-950 text-white px-4 py-2 rounded-lg font-medium text-xs shadow-2xs transition flex items-center space-x-1.5">
+                        <i class="fa-solid fa-download text-[10px]"></i>
+                        <span>İndir / Kaydet</span>
+                    </button>
+                    <button
+                        class="close-modal-btn bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium transition"
+                        data-target="pdf-viewer-modal">Kapat</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Veri Durumu Güncelleme / Yeni Aşama Ekleme Modalı -->
+    <div id="update-modal"
+        class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[2000] hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden border border-slate-200">
+            <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+                <h3 class="font-bold text-xs flex items-center space-x-1.5"><i
+                        class="fa-solid fa-pen-to-square text-teal-300"></i><span>Veri Durumu ve Süreç Güncelleme</span>
+                </h3>
+                <button class="close-modal-btn text-slate-300 hover:text-white" data-target="update-modal"><i
+                        class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="update-form" class="p-5 space-y-3 text-[11px]">
+                <div>
+                    <label class="block font-semibold text-slate-600 mb-1">Revize Edilecek Süreç</label>
+                    <select id="update-stage-select"
+                        class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 focus:ring-2 focus:ring-slate-800">
+                        <option value="1">1) İşleme alınmadı</option>
+                        <option value="2">2) İşlem yapılması imar olarak sorunlu</option>
+                        <option value="3">3) İşleme alındı</option>
+                        <option value="4">4) İstemli süreç başladı</option>
+                        <option value="5">5) Resen süreç başladı</option>
+                        <option value="7">7) İşlem tamamlandı</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-600 mb-1">İşlem Tarihi</label>
+                    <input type="date" id="update-date"
+                        class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-600 mb-1">Açıklama / Not</label>
+                    <textarea id="update-notes" rows="2" placeholder="Revize açıklaması..."
+                        class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2"></textarea>
+                </div>
+                <!-- Seçilen aşamaya özel ek alanlar (renderStageSpecificFields tarafından doldurulur) -->
+                <div id="stage-dynamic-fields"></div>
+                <div>
+                    <label class="block font-semibold text-slate-600 mb-1">Rapor PDF Yükle</label>
+                    <input type="file" id="update-pdf-file" accept=".pdf"
+                        class="w-full bg-slate-50 border border-slate-200 rounded-lg p-1 text-slate-500 file:mr-3 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-[10px] file:font-semibold file:bg-slate-100 file:text-slate-700">
+                </div>
+                <div class="pt-2 flex justify-end space-x-2">
+                    <button type="button"
+                        class="close-modal-btn bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg font-medium"
+                        data-target="update-modal">İptal</button>
+                    <button type="submit"
+                        class="bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg font-medium shadow-2xs">Güncelle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Detaylı Arama Modalı -->
+    <div id="detailed-search-modal"
+        class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[2000] hidden flex items-center justify-center p-4">
+        <div
+            class="bg-white rounded-xl shadow-xl max-w-lg w-full overflow-hidden border border-slate-200 flex flex-col max-h-[85vh]">
+            <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+                <h3 class="font-bold text-xs flex items-center space-x-1.5"><i
+                        class="fa-solid fa-magnifying-glass text-teal-300"></i><span>Detaylı Bina ve Yapı
+                        Sorgulama</span></h3>
+                <button class="close-modal-btn text-slate-300 hover:text-white" data-target="detailed-search-modal"><i
+                        class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-5 space-y-3.5 overflow-y-auto text-[11px]">
+                <div class="grid grid-cols-2 gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div>
+                        <label class="block font-semibold text-slate-600 mb-1">MAKS Numarası</label>
+                        <input type="text" id="search-maks-input" placeholder="Örn: 39482019"
+                            class="w-full bg-white border border-slate-200 rounded-lg p-2">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-600 mb-1">Ada / Parsel</label>
+                        <input type="text" id="search-parcel-input" placeholder="Örn: 1452 / 3"
+                            class="w-full bg-white border border-slate-200 rounded-lg p-2">
+                    </div>
+                    <div class="col-span-2 flex justify-end space-x-2 pt-1">
+                        <button id="search-clear-btn"
+                            class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-lg font-medium">Sıfırla</button>
+                        <button id="search-exec-btn"
+                            class="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg font-medium shadow-2xs">Sorgula</button>
+                    </div>
+                </div>
+                <div>
+                    <h4 class="font-bold text-slate-700 mb-2 flex items-center justify-between">
+                        <span>Arama Sonuçları</span>
+                        <span class="text-[10px] text-slate-400" id="search-result-count">0 kayıt</span>
+                    </h4>
+                    <div id="search-results-container" class="space-y-2 max-h-56 overflow-y-auto">
+                        <div class="text-center py-6 text-slate-400">MAKS veya Ada/Parsel girerek arama yapın.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Yönetici Özet Sayfası Modalı -->
+    <div id="executive-summary-modal"
+        class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[2000] hidden flex items-center justify-center p-3 sm:p-4">
+        <div
+            class="bg-white rounded-2xl shadow-2xl max-w-5xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[92vh]">
+            <!-- Modal Başlık Çubuğu -->
+            <div
+                class="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between shrink-0 border-b border-slate-800">
+                <div class="flex items-center space-x-3">
+                    <div
+                        class="w-8 h-8 rounded-lg bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold border border-teal-500/30 shrink-0">
+                        <i class="fa-solid fa-chart-pie text-sm"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-xs sm:text-sm text-white flex items-center space-x-2">
+                            <span>İzmir Kentsel Dönüşüm Yönetici Özet & Analiz Paneli</span>
+                            <span
+                                class="bg-teal-500/20 text-teal-300 text-[9px] font-semibold px-2 py-0.5 rounded-full border border-teal-500/30">Canlı
+                                Veri</span>
+                        </h3>
+                        <p class="text-[10px] text-slate-400">Tüm filtreler, süreç kademeleri, imar uyumsuzlukları, hak
+                            kaybı analizi ve ilçe sıralamaları</p>
+                    </div>
+                </div>
+                <button
+                    class="close-modal-btn text-slate-400 hover:text-white transition p-1.5 rounded-lg hover:bg-slate-800"
+                    data-target="executive-summary-modal" onclick="closeModal('executive-summary-modal')">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Sekme Gezinme Çubuğu (Tabs) -->
+            <div class="bg-slate-900 px-4 sm:px-6 pt-2 flex space-x-1.5 border-b border-slate-800 shrink-0 overflow-x-auto"
+                id="exec-tabs-nav">
+                <button type="button" onclick="switchExecTab('stages')" id="exec-tab-btn-stages"
+                    class="exec-tab-btn px-4 py-2 text-xs font-bold rounded-t-xl bg-white text-slate-900 transition flex items-center space-x-2 shadow-2xs whitespace-nowrap">
+                    <i class="fa-solid fa-stairs text-teal-600"></i>
+                    <span>1. Süreç Kademeleri</span>
+                </button>
+                <button type="button" onclick="switchExecTab('zoning')" id="exec-tab-btn-zoning"
+                    class="exec-tab-btn px-4 py-2 text-xs font-semibold rounded-t-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition flex items-center space-x-2 whitespace-nowrap">
+                    <i class="fa-solid fa-draw-polygon text-teal-400"></i>
+                    <span>2. İmar & Uyumsuzluk</span>
+                </button>
+                <button type="button" onclick="switchExecTab('loss')" id="exec-tab-btn-loss"
+                    class="exec-tab-btn px-4 py-2 text-xs font-semibold rounded-t-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition flex items-center space-x-2 whitespace-nowrap">
+                    <i class="fa-solid fa-triangle-exclamation text-rose-400"></i>
+                    <span>3. Hak Kaybı Analizi</span>
+                </button>
+                <button type="button" onclick="switchExecTab('districts')" id="exec-tab-btn-districts"
+                    class="exec-tab-btn px-4 py-2 text-xs font-semibold rounded-t-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition flex items-center space-x-2 whitespace-nowrap">
+                    <i class="fa-solid fa-city text-amber-400"></i>
+                    <span>4. İlçe Sıralamaları</span>
+                </button>
+            </div>
+
+            <!-- Sekme İçerikleri Konteyneri -->
+            <div class="p-4 sm:p-6 overflow-y-auto text-[11px] bg-slate-50 flex-1 space-y-6">
+
+                <!-- SEKME 1: SÜREÇ KADEMELERİ DAĞILIMI & SIRALAMASI -->
+                <div id="exec-tab-content-stages" class="space-y-5">
+                    <!-- Üst Bilgi Başlığı -->
+                    <div
+                        class="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div class="space-y-0.5">
+                            <h4 class="font-bold text-slate-900 text-xs flex items-center space-x-2">
+                                <i class="fa-solid fa-stairs text-teal-600"></i>
+                                <span>Kentsel Dönüşüm Süreç Kademeleri Sıralaması (1-7)</span>
+                            </h4>
+                            <p class="text-[10px] text-slate-500">
+                                759 yapının kanuni kentsel dönüşüm kademelerindeki dağılımı ve yoğunluk sıralaması.
+                            </p>
+                        </div>
+                        <div class="flex items-center space-x-2 shrink-0">
+                            <span
+                                class="inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg text-[11px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                                <i class="fa-solid fa-building text-teal-600"></i>
+                                <span>Toplam <strong id="exec-total-count" class="text-teal-900">0</strong> Yapı</span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Donut Pasta Grafiği & Kademe Sıralama Kartları -->
+                    <div
+                        class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-2xs">
+                        <div class="md:col-span-5 flex flex-col items-center justify-center p-2">
+                            <h5 class="font-bold text-slate-800 mb-3 text-xs flex items-center space-x-1.5 self-start">
+                                <i class="fa-solid fa-chart-pie text-teal-600"></i>
+                                <span>Süreç Dağılım Grafiği</span>
+                            </h5>
+                            <div class="relative w-44 h-44 flex items-center justify-center">
+                                <svg class="w-full h-full transform -rotate-90" viewBox="0 0 36 36"
+                                    id="exec-pie-svg"></svg>
+                                <div
+                                    class="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+                                    <span class="text-[10px] text-slate-400 uppercase font-semibold">Toplam Yapı</span>
+                                    <span class="text-lg font-black text-slate-900"
+                                        id="exec-total-count-center">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="md:col-span-7 space-y-1.5" id="exec-top-cards-container"></div>
+                    </div>
+
+                    <!-- Süreç Kademeleri Sıralama Tablosu -->
+                    <div class="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                        <div class="p-3.5 bg-slate-100/80 border-b border-slate-200 flex items-center justify-between">
+                            <h5 class="font-bold text-slate-800 text-xs flex items-center space-x-2">
+                                <i class="fa-solid fa-arrow-down-wide-short text-slate-500"></i>
+                                <span>Kademelere Göre Yapı Sayısı Sıralaması (Büyükten Küçüğe)</span>
+                            </h5>
+                            <span class="text-[10px] text-slate-500">7 Kanuni Kademe</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr
+                                        class="bg-slate-50 text-slate-600 uppercase text-[9.5px] font-bold border-b border-slate-200">
+                                        <th class="p-2.5 text-center w-12">Sıra</th>
+                                        <th class="p-2.5">Kademe Adı</th>
+                                        <th class="p-2.5 text-right">Yapı Sayısı</th>
+                                        <th class="p-2.5">Yüzde Payı</th>
+                                        <th class="p-2.5">Hukuki / İdari Durum</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="exec-stages-ranking-tbody" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SEKME 2: İMAR & UYUMSUZLUK DAĞILIMI & SIRALAMASI -->
+                <div id="exec-tab-content-zoning" class="space-y-5 hidden">
+                    <!-- Bilgilendirme Başlığı -->
+                    <div class="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                        <div
+                            class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
+                            <div class="space-y-0.5">
+                                <h4 class="font-bold text-slate-900 text-xs flex items-center space-x-2">
+                                    <i class="fa-solid fa-draw-polygon text-teal-600 text-sm"></i>
+                                    <span>İmar Durumu ve Uyumsuzluk Notu Sıralaması</span>
+                                </h4>
+                                <p class="text-[10px] text-slate-500">
+                                    Haritada sağ katman yarısını oluşturan imar kısıtı, kamuya terk ve mekânsal ihlal
+                                    analizleri.
+                                </p>
+                            </div>
+                            <div class="flex items-center space-x-1.5 self-start sm:self-auto">
+                                <span
+                                    class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs">
+                                    <i class="fa-solid fa-circle-half-stroke text-teal-600"></i>
+                                    <span>Harita İki Renkli Sağ Katman</span>
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- 3 Temel İmar Risk Seviyesi (Yeşil, Sarı, Kırmızı) -->
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3" id="exec-zoning-groups-summary"></div>
+
+                        <!-- 6 Kategori Kırılım Kartları -->
+                        <div class="space-y-2 pt-2">
+                            <div class="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                                <span class="flex items-center space-x-1.5">
+                                    <i class="fa-solid fa-layer-group text-slate-400"></i>
+                                    <span>İmar Notu Kategorileri Sıralaması (Büyükten Küçüğe)</span>
+                                </span>
+                                <span class="text-[10px] font-normal text-slate-400">Toplam <span
+                                        id="exec-zoning-total-text" class="font-semibold text-slate-700">0</span>
+                                    Yapı</span>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5"
+                                id="exec-zoning-details-container"></div>
+                        </div>
+                    </div>
+
+                    <!-- İmar Notu Detay Tablosu -->
+                    <div class="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                        <div class="p-3.5 bg-slate-100/80 border-b border-slate-200 flex items-center justify-between">
+                            <h5 class="font-bold text-slate-800 text-xs flex items-center space-x-2">
+                                <i class="fa-solid fa-table-list text-slate-500"></i>
+                                <span>İmar Notu Kategorileri Karşılaştırma Sıralaması</span>
+                            </h5>
+                            <span class="text-[10px] text-slate-500">6 Temel Kategori</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr
+                                        class="bg-slate-50 text-slate-600 uppercase text-[9.5px] font-bold border-b border-slate-200">
+                                        <th class="p-2.5 text-center w-12">Sıra</th>
+                                        <th class="p-2.5">Kategori / İmar Notu</th>
+                                        <th class="p-2.5 text-center">Risk Düzeyi</th>
+                                        <th class="p-2.5 text-right">Yapı Adedi</th>
+                                        <th class="p-2.5">Dağılım Oranı (%)</th>
+                                        <th class="p-2.5">Dönüşüm Sürecine Etkisi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="exec-zoning-ranking-tbody" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SEKME 3: HAK KAYBI ANALİZİ (YAPI ALANI DURUMU) -->
+                <div id="exec-tab-content-loss" class="space-y-5 hidden">
+                    <!-- Hak Kaybı KPI Kartları -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5" id="exec-loss-kpi-container">
+                    </div>
+
+                    <!-- En Yüksek Hak Kaybı Yaşayan Yapılar Sıralaması -->
+                    <div class="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden space-y-0">
+                        <div
+                            class="p-4 bg-rose-50/60 border-b border-rose-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                                <h5 class="font-bold text-rose-950 text-xs flex items-center space-x-2">
+                                    <i class="fa-solid fa-triangle-exclamation text-rose-600"></i>
+                                    <span>En Yüksek Hak Kaybı Yaşayan Yapılar Sıralaması (Top 15)</span>
+                                </h5>
+                                <p class="text-[10px] text-rose-700/80 mt-0.5">
+                                    Mevcut Yapı Alanı, Artışlı İmar Alanından büyük olan ve en yüksek alan açığına sahip
+                                    öncelikli yapılar.
+                                </p>
+                            </div>
+                            <span
+                                class="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200 self-start sm:self-auto shrink-0">
+                                <span>Kritik Öncelikli Liste</span>
+                            </span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr
+                                        class="bg-slate-50 text-slate-600 uppercase text-[9.5px] font-bold border-b border-slate-200">
+                                        <th class="p-2.5 text-center w-10">Sıra</th>
+                                        <th class="p-2.5">İlçe / Mahalle</th>
+                                        <th class="p-2.5">Ada / Parsel</th>
+                                        <th class="p-2.5 text-right">Mevcut Alan</th>
+                                        <th class="p-2.5 text-right">Mevcut İmar</th>
+                                        <th class="p-2.5 text-right">Artışlı İmar</th>
+                                        <th class="p-2.5 text-right font-black text-rose-700">Net Kayıp (Fark)</th>
+                                        <th class="p-2.5 text-center">Haritada Göster</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="exec-loss-top-tbody" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- İlçelere Göre Hak Kaybı Dağılımı Sıralaması -->
+                    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                            <h5 class="font-bold text-slate-900 text-xs flex items-center space-x-2">
+                                <i class="fa-solid fa-chart-bar text-teal-600"></i>
+                                <span>İlçe Bazında Hak Kaybı Yaşayan Yapı Sayıları Sıralaması</span>
+                            </h5>
+                            <span class="text-[10px] text-slate-400">Hak Kaybı Sayısına Göre Sıralı</span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5"
+                            id="exec-loss-districts-grid"></div>
+                    </div>
+                </div>
+
+                <!-- SEKME 4: İLÇE SIRALAMALARI & KARŞILAŞTIRMA -->
+                <div id="exec-tab-content-districts" class="space-y-5 hidden">
+                    <!-- İlçe Sıralamaları Tablosu -->
+                    <div class="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                        <div
+                            class="p-4 bg-slate-100/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h4 class="font-bold text-slate-900 text-xs flex items-center space-x-2">
+                                    <i class="fa-solid fa-city text-teal-600"></i>
+                                    <span>Tüm İlçelerin Kentsel Dönüşüm Karşılaştırmalı Sıralaması</span>
+                                </h4>
+                                <p class="text-[10px] text-slate-500 mt-0.5">
+                                    İlçeleri toplam yapı sayısı, hak kaybı oranı veya imar riski durumuna göre
+                                    sıralayabilirsiniz.
+                                </p>
+                            </div>
+                            <!-- Sıralama Kriteri Seçici Butonları -->
+                            <div class="flex items-center space-x-1.5 bg-slate-200/70 p-1 rounded-lg shrink-0">
+                                <button type="button" onclick="setExecDistrictSort('total')" id="btn-dist-sort-total"
+                                    class="px-2.5 py-1 text-[10px] font-bold rounded-md bg-white text-slate-900 shadow-2xs transition">
+                                    Toplam Yapı
+                                </button>
+                                <button type="button" onclick="setExecDistrictSort('loss')" id="btn-dist-sort-loss"
+                                    class="px-2.5 py-1 text-[10px] font-semibold rounded-md text-slate-600 hover:text-slate-900 transition">
+                                    Hak Kaybı Oranı
+                                </button>
+                                <button type="button" onclick="setExecDistrictSort('zoning')" id="btn-dist-sort-zoning"
+                                    class="px-2.5 py-1 text-[10px] font-semibold rounded-md text-slate-600 hover:text-slate-900 transition">
+                                    İmar Riski
+                                </button>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr
+                                        class="bg-slate-50 text-slate-600 uppercase text-[9.5px] font-bold border-b border-slate-200">
+                                        <th class="p-2.5 text-center w-10">Sıra</th>
+                                        <th class="p-2.5">İlçe Adı</th>
+                                        <th class="p-2.5 text-right">Toplam Yapı</th>
+                                        <th class="p-2.5">İl Geneli Pay</th>
+                                        <th class="p-2.5 text-right">Hak Kaybı Yaşayan</th>
+                                        <th class="p-2.5 text-right">İmar İhlali/Riski</th>
+                                        <th class="p-2.5">En Yoğun Kademe</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="exec-districts-ranking-tbody" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Tekil İlçe Detay Kartı (Filtre ile) -->
+                    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+                        <div
+                            class="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-100 gap-2">
+                            <h4 class="font-bold text-slate-800 text-xs flex items-center space-x-2">
+                                <i class="fa-solid fa-filter text-teal-600"></i>
+                                <span>Seçili İlçe Kentsel Dönüşüm Kademeleri ve İmar Durumu Detayı</span>
+                            </h4>
+                            <div class="flex items-center space-x-2">
+                                <label class="text-[10px] text-slate-500 font-medium">İlçe Seç:</label>
+                                <select id="exec-district-select"
+                                    class="bg-slate-50 border border-slate-300 text-slate-800 rounded-lg px-3 py-1.5 text-[11px] font-medium focus:outline-none focus:ring-2 focus:ring-slate-800">
+                                    <option value="all">Tüm İlçeler</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="space-y-3" id="exec-district-summary"></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Başlangıcı -->
+    <script>
+        // Global Değişkenler
+        window.editingStageIndex = null;
+        let currentUserRole = (window.__ACTIVE_AUTH_SESSION && window.__ACTIVE_AUTH_SESSION.role) ? window.__ACTIVE_AUTH_SESSION.role : 'kullanici';
+        let mapInstance = null;
+        let markersLayerGroup = null;
+        let selectedBuildingGlobal = null;
+        let geojsonBuildingList = [];
+        let currentPdfUrlGlobal = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+
+        const stageConfig = {
+            1: { name: '1) İşleme alınmadı', color: '#64748b' },                    // Çelik Grisi (Slate)
+            2: { name: '2) İşlem yapılması imar olarak sorunlu', color: '#9333ea' }, // Derin Mor (Purple)
+            3: { name: '3) İşleme alındı', color: '#06b6d4' },                     // Canlı Camgöbeği (Cyan)
+            4: { name: '4) İstemli süreç başladı', color: '#2563eb' },             // Kraliyet Mavisi (Royal Blue)
+            5: { name: '5) Resen süreç başladı', color: '#d946ef' },               // Parlak Fuşya (Fuchsia)
+            7: { name: '7) İşlem tamamlandı', color: '#4338ca' }                   // Koyu Gece İndigosu (Indigo)
+        };
+
+        // 3. Filtre: Uyumsuzluk ve İmar Durumu Notu Konfigürasyonu
+        // Kullanıcı kuralı: Yol üzerinde ve donatı alanı = Kırmızı (#ef4444)
+        // Diğerleri = Sarı (#eab308)
+        // Uygun = Yeşil (#22c55e)
+        const zoningConfig = {
+            'uygun': {
+                name: 'Uygun',
+                icon: 'fa-circle-check',
+                color: '#22c55e', // Yeşil
+                badge: 'bg-emerald-100 text-emerald-800 border-emerald-200'
+            },
+            'yola_kaldirima_tasma': {
+                name: 'Yola / Kaldırıma Taşma',
+                icon: 'fa-road',
+                color: '#eab308', // Sarı
+                badge: 'bg-amber-100 text-amber-900 border-amber-200'
+            },
+            'yan_parsellere_tasma': {
+                name: 'Yan Parsellere Taşma',
+                icon: 'fa-arrows-left-right',
+                color: '#eab308', // Sarı
+                badge: 'bg-amber-100 text-amber-900 border-amber-200'
+            },
+            'cekme_mesafesi_ihlali': {
+                name: 'Çekme Mesafesi (Yapı Yaklaşma Sınırı) İhlali',
+                icon: 'fa-ruler-combined',
+                color: '#eab308', // Sarı
+                badge: 'bg-amber-100 text-amber-900 border-amber-200'
+            },
+            'donati_alani_icerisinde': {
+                name: 'Donatı Alanı İçerisinde',
+                icon: 'fa-tree',
+                color: '#ef4444', // Kırmızı
+                badge: 'bg-rose-100 text-rose-900 border-rose-200'
+            },
+            'yol_uzerinde': {
+                name: 'Yol Üzerinde',
+                icon: 'fa-triangle-exclamation',
+                color: '#ef4444', // Kırmızı
+                badge: 'bg-rose-100 text-rose-900 border-rose-200'
+            }
+        };
+
+        // İmar Durumu Rengini Döndürür:
+        function getZoningColor(zoningKey) {
+            if (zoningKey === 'uygun') return '#22c55e'; // Yeşil
+            if (zoningKey === 'yol_uzerinde' || zoningKey === 'donati_alani_icerisinde') return '#ef4444'; // Kırmızı
+            return '#eab308'; // Diğerleri: Sarı
+        }
+
+        // İki Renkli (Sol: Süreç Kademesi, Sağ: İmar Durumu) Leaflet Marker İkonu Üretici
+        function createSplitBuildingIcon(stageColor, zoningColor) {
+            return L.divIcon({
+                className: 'custom-building-marker',
+                html: `
+                    <div style="
+                        background: linear-gradient(90deg, ${stageColor} 0%, ${stageColor} 50%, ${zoningColor} 50%, ${zoningColor} 100%);
+                        width: 30px;
+                        height: 30px;
+                        border-radius: 50%;
+                        border: 2px solid #ffffff;
+                        box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        position: relative;
+                        cursor: pointer;
+                        transition: transform 0.2s ease;
+                    " onmouseover="this.style.transform='scale(1.25)'" onmouseout="this.style.transform='scale(1)'">
+                        <div style="position: absolute; left: 50%; top: 0; bottom: 0; width: 1.5px; background: rgba(255,255,255,0.9); transform: translateX(-50%);"></div>
+                        <div style="width: 15px; height: 15px; border-radius: 50%; background: rgba(15, 23, 42, 0.75); display: flex; align-items: center; justify-content: center; z-index: 2; border: 1px solid #ffffff;">
+                            <i class="fa-solid fa-building" style="font-size: 7.5px; color: #ffffff;"></i>
+                        </div>
+                    </div>
+                `,
+                iconSize: [30, 30],
+                iconAnchor: [15, 15]
+            });
+        }
+
+        // MAKS ID ile İmar Durumu Notu Eşleştirme Tablosu (Ayrı CSV dosyası geldiğinde buraya bağlanacak)
+        window.MAKS_ZONING_MAPPING = window.MAKS_ZONING_MAPPING || {};
+
+        function normalizeZoningKey(val) {
+            if (!val) return 'uygun';
+            const str = String(val).toLowerCase().trim();
+            if (str.includes('kaldırım') || str.includes('yola')) return 'yola_kaldirima_tasma';
+            if (str.includes('yan parsel')) return 'yan_parsellere_tasma';
+            if (str.includes('çekme') || str.includes('yaklaşma')) return 'cekme_mesafesi_ihlali';
+            if (str.includes('donatı')) return 'donati_alani_icerisinde';
+            if (str.includes('yol üzer') || str === 'yol') return 'yol_uzerinde';
+            if (str.includes('uygun')) return 'uygun';
+            return 'uygun';
+        }
+
+        // İmar Durumu Kontrol Fonksiyonu (Şimdilik CSV gelene kadar varsayılan olarak "Uygun" işaretler)
+        function getZoningStatusForBuilding(bId, props) {
+            const maksId = (props && props.ID) ? String(props.ID).trim() : String(bId).trim();
+
+            // 1. İleride iletilecek CSV dosyasındaki MAKS ID eşleşmesi varsa
+            if (window.MAKS_ZONING_MAPPING && window.MAKS_ZONING_MAPPING[maksId]) {
+                return normalizeZoningKey(window.MAKS_ZONING_MAPPING[maksId]);
+            }
+
+            // 2. Özellikler içinde doğrudan imar notu verisi varsa
+            if (props && (props.IMAR_NOTU || props.ZONING_STATUS)) {
+                return normalizeZoningKey(props.IMAR_NOTU || props.ZONING_STATUS);
+            }
+
+            // 3. Şimdilik tüm yapıları "Uygun" olarak işaretle
+            return 'uygun';
+        }
+
+        // Başarı Bildirim Kutucuğu (Toast)
+        function showSuccessToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed top-5 right-5 bg-teal-600 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg flex items-center space-x-2 z-[9999] transition-opacity duration-300';
+            toast.innerHTML = `<i class="fa-solid fa-circle-check text-sm"></i><span>${message}</span>`;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function canUserDo(permKey) {
+            if (window.AuthSecurity && typeof window.AuthSecurity.hasPermission === 'function') {
+                return window.AuthSecurity.hasPermission(permKey);
+            }
+            return currentUserRole === 'yonetici';
+        }
+
+        function recordAudit(category, action, target, details, status = 'success') {
+            if (window.AuthSecurity && typeof window.AuthSecurity.logAudit === 'function') {
+                window.AuthSecurity.logAudit({ category, action, target, details, status });
+            }
+        }
+
+        // Kalem (Düzenle) Butonu Tetikleyicisi
+        window.openStageEdit = function (idx) {
+            if (!canUserDo('canUpdateStage')) {
+                recordAudit('SECURITY', 'Yetkisiz Aşama Düzenleme Denemesi', selectedBuildingGlobal ? `MAKS: ${selectedBuildingGlobal.maks}` : '-', 'Kullanıcının süreç aşaması düzenleme yetkisi bulunmuyor.', 'warning');
+                showUnauthorizedMessage('Aşama düzenleme yetkiniz bulunmamaktadır.');
+                return;
+            }
+            if (!selectedBuildingGlobal || !selectedBuildingGlobal.timeline || !selectedBuildingGlobal.timeline[idx]) {
+                alert('Düzenlenecek aşama bulunamadı.');
+                return;
+            }
+
+            window.editingStageIndex = idx;
+            const targetItem = selectedBuildingGlobal.timeline[idx];
+
+            let targetStageId = 1;
+            for (const [key, val] of Object.entries(stageConfig)) {
+                if (val.name === targetItem.stage) {
+                    targetStageId = key;
+                    break;
+                }
+            }
+
+            document.getElementById('update-stage-select').value = targetStageId;
+            document.getElementById('update-date').value = targetItem.start || new Date().toISOString().split('T')[0];
+            document.getElementById('update-notes').value = targetItem.notes || '';
+
+            renderStageSpecificFields();
+            openModal('update-modal');
+        };
+
+        // Haritayı başlatan fonksiyon
+        function initLeafletMap() {
+            if (mapInstance) {
+                mapInstance.invalidateSize();
+                return;
+            }
+
+            if (typeof L === 'undefined') {
+                console.error("Leaflet harita kütüphanesi yüklenemedi!");
+                const countBadge = document.getElementById('active-count-badge');
+                if (countBadge) {
+                    countBadge.innerText = 'Harita Kütüphanesi Yüklenemedi';
+                    countBadge.className = 'bg-rose-900 text-rose-200 text-[10px] px-2 py-0.5 rounded-md font-semibold border border-rose-700';
+                }
+                return;
+            }
+
+            try {
+                // İzmir merkezli haritayı başlat
+                mapInstance = L.map('map', {
+                    preferCanvas: true,
+                    zoomControl: true
+                }).setView([38.4237, 27.1428], 12);
+
+                // Google Maps Uydu (Hibrit) ve Yol Katmanları (file:// açılışlarında 403 engeli yaşanmaz)
+                const googleSatelliteHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+                    maxZoom: 20,
+                    attribution: '&copy; Google Maps Uydu'
+                });
+
+                const googleRoadmap = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                    maxZoom: 20,
+                    attribution: '&copy; Google Maps'
+                });
+
+                // Varsayılan olarak Google Uydu (Hibrit: Detaylı Uydu + Cadde İsimleri) yükle
+                googleSatelliteHybrid.addTo(mapInstance);
+
+                L.control.layers({
+                    "Google Uydu (Detaylı)": googleSatelliteHybrid,
+                    "Google Harita (Yol)": googleRoadmap
+                }, null, { position: 'topright' }).addTo(mapInstance);
+
+                markersLayerGroup = L.layerGroup().addTo(mapInstance);
+
+                // Harita konteynerinin boyut değişimlerini dinle
+                if (window.ResizeObserver) {
+                    new ResizeObserver(() => {
+                        if (mapInstance) mapInstance.invalidateSize();
+                    }).observe(document.getElementById('map'));
+                }
+
+                // GeoJSON Verilerini Yükle
+                loadGeojsonData();
+            } catch (err) {
+                console.error("Harita başlatılırken bir hata oluştu:", err);
+            }
+        }
+
+        // GeoJSON Yükleme ve Dinamik İlçe Listesini Çıkarma
+        function processGeojsonData(data) {
+            geojsonBuildingList = [];
+            const districtSet = new Set();
+
+            (data.features || []).forEach((feat, index) => {
+                const props = feat.properties || {};
+                const bId = props.uniqueId || (props.ID ? props.ID : (index + 1));
+                props.uniqueId = bId;
+
+                const districtName = props.ILCE_ADI ? props.ILCE_ADI.trim() : "İzmir";
+                districtSet.add(districtName);
+
+                let latlng = null;
+                if (feat.geometry && feat.geometry.coordinates) {
+                    latlng = [feat.geometry.coordinates[1], feat.geometry.coordinates[0]];
+                } else if (props.ENLEM && props.BOYLAM) {
+                    latlng = [parseFloat(props.ENLEM), parseFloat(props.BOYLAM)];
+                }
+
+                const zoningKey = getZoningStatusForBuilding(bId, props);
+
+                const buildingObj = {
+                    id: bId,
+                    maks: props.ID || "Bilinmiyor",
+                    district: districtName,
+                    neighborhood: props.MAHALLE_AD || "Merkez",
+                    parcel: (props.ADA || "") + (props.ADA && props.PARSEL ? "/" : "") + (props.PARSEL || ""),
+                    year: props.YAPIM_YILI || "Belirtilmemiş",
+                    street: props.YOL_ADI || "",
+                    doorNo: props.KAPI_NO || "",
+                    type: props.TIPI || "",
+                    floors: props["SERBEST\nKA"] || "",
+                    groundClass: (props.ZEMIN_SINI && props.ZEMIN_SINI !== "-") ? props.ZEMIN_SINI : "",
+                    grupNo: props["GRUP NO"] || "",
+                    mevcutYapiAlani: (props.MEVCUTLU_YAPI_ALANI !== undefined && props.MEVCUTLU_YAPI_ALANI !== null) ? props.MEVCUTLU_YAPI_ALANI : null,
+                    mevcutImarAlani: (props.MEVCUTLU_PARSEL_IMAR_ALANI !== undefined && props.MEVCUTLU_PARSEL_IMAR_ALANI !== null) ? props.MEVCUTLU_PARSEL_IMAR_ALANI : null,
+                    artisliImarAlani: (props.ARTISLI_PARSEL_IMAR_ALANI !== undefined && props.ARTISLI_PARSEL_IMAR_ALANI !== null) ? props.ARTISLI_PARSEL_IMAR_ALANI : null,
+                    imarNotu: props.IMAR_NOTU || "",
+                    stage: 1,
+                    stageText: "1) İşleme alınmadı",
+                    color: stageConfig[1].color,
+                    zoningStatus: zoningKey,
+                    zoningStatusText: zoningConfig[zoningKey] ? zoningConfig[zoningKey].name : (props.IMAR_NOTU || 'Uygun'),
+                    latlng: latlng,
+                    layer: null,
+                    timeline: [
+                        {
+                            stage: "1) İşleme alınmadı",
+                            start: props.INCELEME_TARIHI || "2026-03-01",
+                            pdf: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+                            pdfName: "imar_durumu_" + (props.ID || "rapor") + ".pdf",
+                            notes: "İlk kayıt oluşturuldu."
+                        }
+                    ]
+                };
+
+                if (!window.geojsonBuildingsMap) window.geojsonBuildingsMap = {};
+                window.geojsonBuildingsMap[bId] = buildingObj;
+                geojsonBuildingList.push(buildingObj);
+            });
+
+            if (window.StorageService) {
+                window.StorageService.applyToBuildings(geojsonBuildingList, window.geojsonBuildingsMap, districtSet);
+            }
+
+            populateDistrictFilterOptions([...districtSet].sort());
+            applyMapFilters();
+        }
+
+        window.addEventListener('kentvizyon:db-synced', () => {
+            if (window.StorageService && Array.isArray(geojsonBuildingList) && geojsonBuildingList.length > 0) {
+                window.StorageService.applyToBuildings(geojsonBuildingList, window.geojsonBuildingsMap, new Set());
+                applyMapFilters();
+            }
+        });
+
+        function loadGeojsonData() {
+            if (!window.GEOJSON_DATA && window.AuthSecurity) {
+                window.__ACTIVE_AUTH_SESSION = window.AuthSecurity.unlockAndLoadGeoJSON();
+            }
+            if (window.GEOJSON_DATA && window.GEOJSON_DATA.features) {
+                processGeojsonData(window.GEOJSON_DATA);
+                return;
+            }
+            window.location.replace('giris.html');
+        }
+
+        // İlçe Seçim Kutusunu Doldurur
+        function populateDistrictFilterOptions(districts) {
+            const select = document.getElementById('district-filter');
+            if (!select) return;
+            const currentVal = select.value;
+            select.innerHTML = '<option value="all">Tüm İlçeler</option>' +
+                districts.map(d => `<option value="${d}">${d}</option>`).join('');
+            if (districts.includes(currentVal)) {
+                select.value = currentVal;
+            }
+        }
+
+        // Çapraz Filtreleme: İlçe, Süreç ve Uyumsuzluk/İmar Notu Kriterine Göre Çizim Yapar
+        function applyMapFilters() {
+            if (!mapInstance || !markersLayerGroup) return;
+            markersLayerGroup.clearLayers();
+
+            const selectedStage = document.getElementById('stage-filter').value;
+            const selectedDistrict = document.getElementById('district-filter').value;
+            const selectedZoning = document.getElementById('zoning-filter') ? document.getElementById('zoning-filter').value : 'all';
+            const selectedArea = document.getElementById('area-filter') ? document.getElementById('area-filter').value : 'all';
+
+            const filtered = geojsonBuildingList.filter(b => {
+                const matchStage = (selectedStage === 'all') || (String(b.stage) === String(selectedStage));
+                const matchDistrict = (selectedDistrict === 'all') || (b.district.toLowerCase() === selectedDistrict.toLowerCase());
+                const matchZoning = (selectedZoning === 'all') || (b.zoningStatus === selectedZoning);
+                const isRiskli = (b.mevcutYapiAlani !== null && b.artisliImarAlani !== null && Number(b.mevcutYapiAlani) > Number(b.artisliImarAlani));
+                const matchArea = (selectedArea === 'all') ||
+                    (selectedArea === 'riskli' && isRiskli) ||
+                    (selectedArea === 'uygun' && !isRiskli);
+                return matchStage && matchDistrict && matchZoning && matchArea;
+            });
+
+            filtered.forEach(b => {
+                const currentStageColor = stageConfig[b.stage] ? stageConfig[b.stage].color : b.color;
+                const currentZoningColor = getZoningColor(b.zoningStatus);
+
+                const buildingIcon = createSplitBuildingIcon(currentStageColor, currentZoningColor);
+
+                // Koordinatı belirle
+                let latlng = null;
+                if (b.latlng) {
+                    latlng = b.latlng;
+                } else if (b.rawFeature && b.rawFeature.geometry && b.rawFeature.geometry.coordinates) {
+                    latlng = [b.rawFeature.geometry.coordinates[1], b.rawFeature.geometry.coordinates[0]];
+                } else if (b.lat && b.lng) {
+                    latlng = [b.lat, b.lng];
+                }
+
+                if (!latlng) return;
+
+                const marker = L.marker(latlng, { icon: buildingIcon }).addTo(markersLayerGroup);
+                b.layer = marker;
+
+                marker.on('click', function (e) {
+                    selectedBuildingGlobal = b;
+                    recordAudit(
+                        'BUILDING_VIEW',
+                        'Haritadan Yapı Seçildi',
+                        `MAKS: ${b.maks} (${b.district})`,
+                        `${b.district} / ${b.neighborhood} (Ada/Parsel: ${b.parcel || '-'}) harita üzerinden incelendi.`,
+                        'success'
+                    );
+
+                    const flashIcon = L.divIcon({
+                        className: 'custom-building-flash',
+                        html: `
+                            <div style="
+                                background: linear-gradient(90deg, ${currentStageColor} 0%, ${currentStageColor} 50%, ${currentZoningColor} 50%, ${currentZoningColor} 100%);
+                                width: 38px;
+                                height: 38px;
+                                border-radius: 50%;
+                                border: 3px solid #ffffff;
+                                box-shadow: 0 0 20px rgba(255,255,255,0.95), 0 0 10px ${currentStageColor};
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                position: relative;
+                                animation: pulse-red 0.8s infinite;
+                            ">
+                                <div style="position: absolute; left: 50%; top: 0; bottom: 0; width: 1.5px; background: #ffffff; transform: translateX(-50%);"></div>
+                                <div style="width: 18px; height: 18px; border-radius: 50%; background: #0f172a; display: flex; align-items: center; justify-content: center; z-index: 2; border: 1.5px solid #ffffff;">
+                                    <i class="fa-solid fa-building" style="font-size: 9px; color: #ffffff;"></i>
+                                </div>
+                            </div>
+                        `,
+                        iconSize: [38, 38],
+                        iconAnchor: [19, 19]
+                    });
+
+                    marker.setIcon(flashIcon);
+                    setTimeout(() => {
+                        const finalStageColor = stageConfig[b.stage] ? stageConfig[b.stage].color : b.color;
+                        const finalZoningColor = getZoningColor(b.zoningStatus);
+                        marker.setIcon(createSplitBuildingIcon(finalStageColor, finalZoningColor));
+                    }, 3500);
+
+                    renderSidebarDetails();
+                    mapInstance.flyTo(e.latlng, 16, { duration: 1 });
+                });
+            });
+
+            // Aktif bina sayısını sol üstteki rozete yaz
+            const countBadge = document.getElementById('active-count-badge');
+            if (countBadge) {
+                countBadge.innerText = `${filtered.length} Yapı Haritada`;
+            }
+
+            // Filtre dropdown sayaçları ve buton rozetini güncelle
+            let activeFilterCount = 0;
+            if (selectedStage !== 'all') activeFilterCount++;
+            if (selectedDistrict !== 'all') activeFilterCount++;
+            if (selectedZoning !== 'all') activeFilterCount++;
+            if (selectedArea !== 'all') activeFilterCount++;
+
+            const indicator = document.getElementById('active-filter-indicator');
+            const filterBtn = document.getElementById('filter-dropdown-btn');
+            if (indicator) {
+                if (activeFilterCount > 0) {
+                    indicator.innerText = activeFilterCount;
+                    indicator.classList.remove('hidden');
+                    filterBtn?.classList.add('border-teal-400', 'text-teal-300');
+                } else {
+                    indicator.classList.add('hidden');
+                    filterBtn?.classList.remove('border-teal-400', 'text-teal-300');
+                }
+            }
+            const dropdownCount = document.getElementById('filter-dropdown-count');
+            if (dropdownCount) {
+                dropdownCount.innerText = `${filtered.length} Yapı`;
+            }
+        }
+
+        function formatAlan(val) {
+            if (val === null || val === undefined || val === '' || val === '-') return '-';
+            const num = Number(val);
+            if (isNaN(num)) return val;
+            return num.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' m²';
+        }
+
+        // Sağ Paneli ve 5. Satırdaki İşlem Geçmişini Çizen Fonksiyon
+        function renderSidebarDetails() {
+            if (!selectedBuildingGlobal) return;
+            const b = selectedBuildingGlobal;
+            const container = document.getElementById('sidebar-detail-content');
+            const tag = document.getElementById('selected-id-tag');
+
+            if (tag) tag.innerText = 'MAKS: ' + b.maks;
+            if (!container) return;
+
+            let historyHtml = '';
+            if (b.timeline && b.timeline.length > 0) {
+                historyHtml = b.timeline.map((item, idx) => `
+                    <div class="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between shadow-2xs">
+                        <div class="space-y-0.5">
+                            <div class="font-bold text-slate-800 text-[11px]">${item.stage}</div>
+                            <div class="text-[10px] text-slate-400 font-mono flex items-center space-x-1">
+                                <i class="fa-regular fa-calendar text-[9px]"></i>
+                                <span>${formatTarihTR(item.start)}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-1">
+                            <button onclick="viewPdf('${item.pdf || currentPdfUrlGlobal}', '${item.pdfName || 'evrak.pdf'}', 'timeline', ${b.id}, ${idx})" class="w-7 h-7 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-lg flex items-center justify-center transition shadow-2xs" title="Evrakı Görüntüle">
+                                <i class="fa-solid fa-magnifying-glass text-[11px]"></i>
+                            </button>
+                            ${canUserDo('canUpdateStage') ? `
+                            <button onclick="window.openStageEdit(${idx})" class="w-7 h-7 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg flex items-center justify-center transition shadow-2xs" title="Bu Aşamayı Düzenle">
+                                <i class="fa-solid fa-pen-to-square text-[11px]"></i>
+                            </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                historyHtml = '<div class="text-slate-400 text-[10px]">Henüz işlem kaydı bulunmuyor.</div>';
+            }
+
+            container.innerHTML = `
+                <div class="space-y-2.5">
+                    <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                        <div class="text-[10px] text-slate-400 font-semibold uppercase">1. Satır: MAKS Numarası</div>
+                        <div class="font-bold text-slate-800 text-xs">${b.maks || '-'}</div>
+                    </div>
+                    <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                        <div class="text-[10px] text-slate-400 font-semibold uppercase">2. Satır: İlçe / Mahalle</div>
+                        <div class="font-bold text-slate-800 text-xs">${b.district || '-'} / ${b.neighborhood || '-'}</div>
+                    </div>
+                    <!-- Uyumsuzluk ve İmar Durumu Notu -->
+                    <div class="p-2.5 rounded-lg border ${zoningConfig[b.zoningStatus]?.badge || 'bg-slate-50 text-slate-800 border-slate-200'}">
+                        <div class="text-[10px] font-bold uppercase flex items-center justify-between">
+                            <span>Uyumsuzluk ve İmar Durumu Notu</span>
+                            <i class="fa-solid ${zoningConfig[b.zoningStatus]?.icon || 'fa-circle-check'}"></i>
+                        </div>
+                        <div class="font-bold text-xs mt-1 flex items-center space-x-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full inline-block shrink-0" style="background-color: ${zoningConfig[b.zoningStatus]?.color || '#10b981'};"></span>
+                            <span>${b.zoningStatusText || 'Uygun'}</span>
+                        </div>
+                    </div>
+                    ${b.parcel ? `
+                    <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                        <div class="text-[10px] text-slate-400 font-semibold uppercase">Ada / Parsel</div>
+                        <div class="font-bold text-slate-800 text-xs">${b.parcel}</div>
+                    </div>` : ''}
+                    ${(b.street || b.doorNo) ? `
+                    <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                        <div class="text-[10px] text-slate-400 font-semibold uppercase">Adres</div>
+                        <div class="font-bold text-slate-800 text-xs">${[b.street, b.doorNo ? 'No: ' + b.doorNo : ''].filter(Boolean).join(' ')}</div>
+                    </div>` : ''}
+                    ${(b.type || b.floors || b.groundClass || b.year) ? `
+                    <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                        <div class="text-[10px] text-slate-400 font-semibold uppercase mb-1">3. Satır: Yapı Özellikleri</div>
+                        <div class="grid ${b.groundClass ? 'grid-cols-4' : 'grid-cols-3'} gap-1">
+                            ${b.type ? `<div class="bg-white border border-slate-200 rounded p-1.5 text-center"><div class="text-[9px] text-slate-400 uppercase">Tipi</div><div class="font-semibold text-slate-800 text-[10px] truncate" title="${b.type}">${b.type}</div></div>` : ''}
+                            ${b.floors ? `<div class="bg-white border border-slate-200 rounded p-1.5 text-center"><div class="text-[9px] text-slate-400 uppercase">Kat</div><div class="font-semibold text-slate-800 text-[10px]">${b.floors}</div></div>` : ''}
+                            <div class="bg-white border border-slate-200 rounded p-1.5 text-center"><div class="text-[9px] text-slate-400 uppercase">Yıl</div><div class="font-semibold text-slate-800 text-[10px] truncate" title="${b.year || '-'}">${(b.year && b.year !== 'Belirtilmemiş') ? b.year : '-'}</div></div>
+                            ${b.groundClass ? `<div class="bg-white border border-slate-200 rounded p-1.5 text-center"><div class="text-[9px] text-slate-400 uppercase">Zemin</div><div class="font-semibold text-slate-800 text-[10px]">${b.groundClass}</div></div>` : ''}
+                        </div>
+                    </div>` : ''}
+                    <!-- Yapı Alanı Bilgileri -->
+                    ${(() => {
+                    const isAlanKritik = (b.mevcutYapiAlani !== null && b.artisliImarAlani !== null && Number(b.mevcutYapiAlani) > Number(b.artisliImarAlani));
+                    return `
+                        <div class="${isAlanKritik ? 'bg-red-50 border-red-300 ring-1 ring-red-200' : 'bg-slate-50 border-slate-200'} p-2.5 rounded-lg border transition">
+                            <div class="flex items-center justify-between mb-1">
+                                <div class="text-[10px] ${isAlanKritik ? 'text-red-700 font-bold' : 'text-slate-400 font-semibold'} uppercase flex items-center space-x-1">
+                                    ${isAlanKritik ? '<i class="fa-solid fa-triangle-exclamation text-red-600 text-[10px]"></i>' : ''}
+                                    <span>Yapı Alanı Bilgileri</span>
+                                </div>
+                                ${isAlanKritik ? `
+                                    <span class="text-[9px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded border border-red-200 flex items-center space-x-1" title="Mevcut yapı alanı, artışlı imar alanından büyüktür">
+                                        <i class="fa-solid fa-circle-exclamation text-[8px]"></i>
+                                        <span>Mevcut > Artışlı</span>
+                                    </span>
+                                ` : ''}
+                            </div>
+                            <div class="grid grid-cols-3 gap-1">
+                                <div class="${isAlanKritik ? 'bg-white border-red-200 shadow-2xs' : 'bg-white border-slate-200'} border rounded p-1.5 text-center flex flex-col justify-between">
+                                    <div class="text-[9px] ${isAlanKritik ? 'text-red-600 font-semibold' : 'text-slate-400 font-semibold'} uppercase leading-tight min-h-[22px] flex items-center justify-center">Mevcut Yapı Alanı</div>
+                                    <div class="font-bold ${isAlanKritik ? 'text-red-700' : 'text-slate-800'} text-[10px] mt-1 truncate" title="${formatAlan(b.mevcutYapiAlani)}">${formatAlan(b.mevcutYapiAlani)}</div>
+                                </div>
+                                <div class="${isAlanKritik ? 'bg-white border-red-200 shadow-2xs' : 'bg-white border-slate-200'} border rounded p-1.5 text-center flex flex-col justify-between">
+                                    <div class="text-[9px] ${isAlanKritik ? 'text-red-600 font-semibold' : 'text-slate-400 font-semibold'} uppercase leading-tight min-h-[22px] flex items-center justify-center">Mevcut İmar Alanı</div>
+                                    <div class="font-bold ${isAlanKritik ? 'text-red-700' : 'text-slate-800'} text-[10px] mt-1 truncate" title="${formatAlan(b.mevcutImarAlani)}">${formatAlan(b.mevcutImarAlani)}</div>
+                                </div>
+                                <div class="${isAlanKritik ? 'bg-white border-red-200 shadow-2xs' : 'bg-white border-slate-200'} border rounded p-1.5 text-center flex flex-col justify-between">
+                                    <div class="text-[9px] ${isAlanKritik ? 'text-red-600 font-semibold' : 'text-slate-400 font-semibold'} uppercase leading-tight min-h-[22px] flex items-center justify-center">Artışlı İmar Alanı</div>
+                                    <div class="font-bold ${isAlanKritik ? 'text-red-700' : 'text-teal-800'} text-[10px] mt-1 truncate" title="${formatAlan(b.artisliImarAlani)}">${formatAlan(b.artisliImarAlani)}</div>
+                                </div>
+                            </div>
+                        </div>
+                        `;
+                })()}
+                    <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                        <div class="text-[10px] text-slate-400 font-semibold uppercase mb-1.5">4. Satır: Mühendislik & İmar PDF Arşivi</div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="openImarPdfModal(${b.id})" class="bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 py-1.5 px-2 rounded-lg font-medium text-[10px] transition flex items-center justify-center space-x-1">
+                                <i class="fa-solid fa-file-pdf"></i><span>İmar Durumu (PDF)</span>
+                            </button>
+                            <button onclick="openOnincelemePdfModal(${b.id})" class="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 py-1.5 px-2 rounded-lg font-medium text-[10px] transition flex items-center justify-center space-x-1">
+                                <i class="fa-solid fa-file-pdf"></i><span>Öninceleme (PDF)</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
+                        <div class="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                            <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider">5. Satır: İşlem Geçmişi</div>
+                            <span class="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold">${b.timeline ? b.timeline.length : 0} İşlem</span>
+                        </div>
+                        <div class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                            ${historyHtml}
+                        </div>
+                        ${canUserDo('canUpdateStage') ? `
+                        <button onclick="window.editingStageIndex = null; document.getElementById('update-form').reset(); renderStageSpecificFields(); openModal('update-modal');" class="w-full bg-slate-900 hover:bg-slate-800 text-white py-2 rounded-xl text-xs font-semibold transition shadow-2xs flex items-center justify-center space-x-1.5 mt-2">
+                            <i class="fa-solid fa-plus text-[10px]"></i>
+                            <span>Yeni Aşama Ekle</span>
+                        </button>
+                        ` : `
+                        <div class="w-full bg-slate-100 border border-slate-200 text-slate-500 py-1.5 px-2.5 rounded-lg text-[10px] font-medium flex items-center justify-center space-x-1.5 mt-2">
+                            <i class="fa-solid fa-eye text-[10px]"></i>
+                            <span>Salt Okunur (Görüntüleyen)</span>
+                        </div>
+                        `}
+                    </div>
+                </div>
+            `;
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            if (!window.__ACTIVE_AUTH_SESSION) {
+                window.location.replace('giris.html');
+                return;
+            }
+
+            currentUserRole = window.__ACTIVE_AUTH_SESSION.role || 'goruntuleyen';
+            const userDisplayEl = document.getElementById('current-user-display');
+            if (userDisplayEl) {
+                const roleLabel = window.AuthSecurity && window.AuthSecurity.getRoleLabel
+                    ? window.AuthSecurity.getRoleLabel(currentUserRole)
+                    : currentUserRole;
+                userDisplayEl.innerText = `${window.__ACTIVE_AUTH_SESSION.displayName || window.__ACTIVE_AUTH_SESSION.username} (${roleLabel})`;
+            }
+
+            // Kullanıcı yetkilerine göre üst menü ve aksiyon butonlarını göster/gizle
+            if (!canUserDo('canAccessAdminPanel')) {
+                document.getElementById('btn-goto-admin-panel')?.classList.add('hidden');
+            }
+            if (!canUserDo('canViewExecSummary')) {
+                document.getElementById('btn-open-exec')?.classList.add('hidden');
+            }
+            if (!canUserDo('canSendTebligat')) {
+                document.getElementById('btn-toplu-tebligat')?.classList.add('hidden');
+            }
+
+            initLeafletMap();
+            renderAnnouncementsModal();
+
+            // Yönetici panelinden ?focusId=... ile gelindiyse ilgili binaya odaklan
+            const urlParams = new URLSearchParams(window.location.search);
+            const focusIdParam = urlParams.get('focusId');
+            if (focusIdParam) {
+                setTimeout(() => {
+                    const targetBuilding = geojsonBuildingList.find(item => String(item.id) === String(focusIdParam) || String(item.maks) === String(focusIdParam));
+                    if (targetBuilding) {
+                        selectBuilding(targetBuilding.id);
+                    }
+                }, 250);
+            }
+
+            document.getElementById('logout-btn').addEventListener('click', () => {
+                if (window.AuthSecurity) {
+                    window.AuthSecurity.clearSession();
+                }
+                window.location.replace('giris.html');
+            });
+
+            // Pencere boyutu değiştiğinde haritayı uyar
+            window.addEventListener('resize', () => {
+                if (mapInstance) mapInstance.invalidateSize();
+            });
+
+            // Filtre Dinleyicileri (Çapraz Filtreleme)
+            document.getElementById('stage-filter')?.addEventListener('change', applyMapFilters);
+            document.getElementById('district-filter')?.addEventListener('change', applyMapFilters);
+            document.getElementById('zoning-filter')?.addEventListener('change', applyMapFilters);
+            document.getElementById('area-filter')?.addEventListener('change', applyMapFilters);
+
+            // Açılır Filtreler Menüsü (Dropdown) Kontrolleri
+            const filterDropdownBtn = document.getElementById('filter-dropdown-btn');
+            const filterDropdownMenu = document.getElementById('filter-dropdown-menu');
+            const filterDropdownArrow = document.getElementById('filter-dropdown-arrow');
+            const filterDropdownWrapper = document.getElementById('filter-dropdown-wrapper');
+
+            filterDropdownBtn?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!filterDropdownMenu) return;
+                const isHidden = filterDropdownMenu.classList.contains('hidden');
+                if (isHidden) {
+                    filterDropdownMenu.classList.remove('hidden');
+                    filterDropdownArrow?.classList.add('rotate-180');
+                } else {
+                    filterDropdownMenu.classList.add('hidden');
+                    filterDropdownArrow?.classList.remove('rotate-180');
+                }
+            });
+
+            document.getElementById('btn-close-filter-dropdown')?.addEventListener('click', () => {
+                filterDropdownMenu?.classList.add('hidden');
+                filterDropdownArrow?.classList.remove('rotate-180');
+            });
+
+            // Menü dışına tıklandığında menüyü kapat
+            document.addEventListener('click', (e) => {
+                if (filterDropdownWrapper && !filterDropdownWrapper.contains(e.target)) {
+                    filterDropdownMenu?.classList.add('hidden');
+                    filterDropdownArrow?.classList.remove('rotate-180');
+                }
+            });
+
+            // Filtreleri Sıfırla Butonu
+            document.getElementById('btn-reset-filters')?.addEventListener('click', () => {
+                const df = document.getElementById('district-filter');
+                const sf = document.getElementById('stage-filter');
+                const zf = document.getElementById('zoning-filter');
+                const af = document.getElementById('area-filter');
+                if (df) df.value = 'all';
+                if (sf) sf.value = 'all';
+                if (zf) zf.value = 'all';
+                if (af) af.value = 'all';
+                applyMapFilters();
+            });
+
+            document.getElementById('btn-open-search').addEventListener('click', () => {
+                openModal('detailed-search-modal');
+                renderSearchResults(geojsonBuildingList);
+            });
+            document.getElementById('search-exec-btn').addEventListener('click', executeSearch);
+            document.getElementById('search-clear-btn').addEventListener('click', () => {
+                document.getElementById('search-maks-input').value = '';
+                document.getElementById('search-parcel-input').value = '';
+                renderSearchResults(geojsonBuildingList);
+            });
+
+            document.getElementById('btn-open-tebligat').addEventListener('click', () => {
+                openModal('tebligat-modal');
+                renderTebligatTabsData();
+            });
+
+            document.getElementById('btn-open-announcements').addEventListener('click', () => {
+                openModal('announcements-modal');
+                renderAnnouncementsModal();
+            });
+
+            document.getElementById('btn-open-exec').addEventListener('click', () => {
+                if (canUserDo('canViewExecSummary')) {
+                    recordAudit('BUILDING_VIEW', 'Yönetici Özet Paneli Görüntülendi', '759 Yapı Özeti', 'Kullanıcı kentsel dönüşüm özet ve analiz panelini açtı.');
+                    openModal('executive-summary-modal');
+                    renderExecutiveSummary();
+                } else {
+                    recordAudit('SECURITY', 'Yetkisiz Yönetici Özeti Erişim Denemesi', 'Yönetici Özet Sayfası', 'Kullanıcının özet analiz sayfasını görüntüleme yetkisi bulunmuyor.', 'warning');
+                    showUnauthorizedMessage('Yönetici Özet Sayfası görüntüleme yetkiniz bulunmamaktadır.');
+                }
+            });
+
+            document.querySelectorAll('.close-modal-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const target = btn.getAttribute('data-target') || btn.closest('.fixed.inset-0')?.id;
+                    if (target) closeModal(target);
+                });
+            });
+
+            // Modalların dışındaki karartılmış arka plana tıklandığında kapatma
+            document.querySelectorAll('.fixed.inset-0').forEach(overlay => {
+                overlay.addEventListener('click', (e) => {
+                    if (e.target === overlay) {
+                        closeModal(overlay.id);
+                    }
+                });
+            });
+
+            // ESC tuşu ile açık modalı kapatma
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    document.querySelectorAll('.fixed.inset-0:not(.hidden)').forEach(overlay => {
+                        closeModal(overlay.id);
+                    });
+                }
+            });
+
+            document.getElementById('update-stage-select').addEventListener('change', renderStageSpecificFields);
+
+            // FORM GÜNCELLEME VE YENİ AŞAMA EKLEME BUTONU
+            document.getElementById('update-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                if (!canUserDo('canUpdateStage')) {
+                    recordAudit('SECURITY', 'Yetkisiz Süreç Güncelleme Denemesi', selectedBuildingGlobal ? `MAKS: ${selectedBuildingGlobal.maks}` : '-', 'Kullanıcının süreç aşaması güncelleme yetkisi yok.', 'warning');
+                    showUnauthorizedMessage('Veri güncelleme yetkiniz bulunmamaktadır.');
+                    return;
+                }
+                if (!selectedBuildingGlobal) {
+                    alert('Lütfen önce haritadan bir bina seçin.');
+                    return;
+                }
+
+                const oldStageText = selectedBuildingGlobal.stageText || stageConfig[selectedBuildingGlobal.stage]?.name || '-';
+                const newStage = parseInt(document.getElementById('update-stage-select').value) || 1;
+                let notes = document.getElementById('update-notes').value || '';
+
+                // Aşamaya özel ek alan (varsa) nota eklenir
+                const dynInput = document.querySelector('#stage-dynamic-fields input');
+                if (dynInput && dynInput.value.trim()) {
+                    const dynLabel = dynInput.previousElementSibling ? dynInput.previousElementSibling.textContent.trim() : 'Ek Bilgi';
+                    notes = (notes ? notes + ' | ' : '') + dynLabel + ': ' + dynInput.value.trim();
+                }
+                let date = document.getElementById('update-date').value;
+                if (!date) {
+                    date = new Date().toISOString().split('T')[0];
+                }
+
+                const pdfInput = document.getElementById('update-pdf-file');
+                let uploadedPdfUrl = currentPdfUrlGlobal;
+                let uploadedFileName = 'asama_' + newStage + '_rapor.pdf';
+
+                const hasNewPdf = pdfInput && pdfInput.files && pdfInput.files.length > 0;
+                if (hasNewPdf) {
+                    const file = pdfInput.files[0];
+                    uploadedFileName = file.name;
+                    if (window.StorageService) {
+                        uploadedPdfUrl = await window.StorageService.savePdfFile(file);
+                    } else {
+                        uploadedPdfUrl = URL.createObjectURL(file);
+                    }
+                }
+
+                if (!selectedBuildingGlobal.timeline) {
+                    selectedBuildingGlobal.timeline = [];
+                }
+
+                const isEditMode = (window.editingStageIndex !== null);
+
+                if (isEditMode) {
+                    const currentItem = selectedBuildingGlobal.timeline[window.editingStageIndex];
+                    const keepOldPdf = !hasNewPdf && currentItem;
+
+                    selectedBuildingGlobal.timeline[window.editingStageIndex] = {
+                        stage: stageConfig[newStage].name,
+                        start: date,
+                        end: 'Devam Ediyor',
+                        pdf: keepOldPdf ? currentItem.pdf : uploadedPdfUrl,
+                        pdfName: keepOldPdf ? currentItem.pdfName : uploadedFileName,
+                        notes: notes
+                    };
+                    window.editingStageIndex = null;
+                } else {
+                    selectedBuildingGlobal.timeline.push({
+                        stage: stageConfig[newStage].name,
+                        start: date,
+                        end: 'Devam Ediyor',
+                        pdf: uploadedPdfUrl,
+                        pdfName: uploadedFileName,
+                        notes: notes
+                    });
+                }
+
+                selectedBuildingGlobal.stage = newStage;
+                selectedBuildingGlobal.stageText = stageConfig[newStage].name;
+                selectedBuildingGlobal.color = stageConfig[newStage].color;
+
+                if (newStage === 7) {
+                    selectedBuildingGlobal.tebligatDurumu = 'Tamamlandı';
+                    selectedBuildingGlobal.tebligatBitisTarihi = date;
+                }
+
+                // Harita üzerindeki pin rengini güncelle
+                if (selectedBuildingGlobal.layer) {
+                    const updatedStageColor = stageConfig[newStage].color;
+                    const updatedZoningColor = getZoningColor(selectedBuildingGlobal.zoningStatus);
+                    selectedBuildingGlobal.layer.setIcon(createSplitBuildingIcon(updatedStageColor, updatedZoningColor));
+                }
+
+                // Kalıcı olarak kaydet
+                if (window.StorageService) {
+                    window.StorageService.saveBuildingOverride(selectedBuildingGlobal);
+                }
+
+                // Denetim Günlüğüne (Audit Log) kaydet
+                recordAudit(
+                    'STAGE_UPDATE',
+                    isEditMode ? 'Süreç Aşaması Düzenlendi' : 'Yeni Süreç Aşaması Eklendi',
+                    `MAKS: ${selectedBuildingGlobal.maks} (${selectedBuildingGlobal.district})`,
+                    `Aşama: "${oldStageText}" → "${stageConfig[newStage].name}" | Tarih: ${date} | Not: ${notes || '-'}${hasNewPdf ? ' | Ekli PDF: ' + uploadedFileName : ''}`,
+                    'success'
+                );
+
+                renderSidebarDetails();
+                renderAnnouncementsModal();
+                closeModal('update-modal');
+                document.getElementById('update-form').reset();
+
+                showSuccessToast(isEditMode ? 'Aşama bilgileri düzenlendi ve kaydedildi!' : 'Yeni aşama ve evrak kalıcı olarak kaydedildi!');
+            });
+
+            const execDistrictSelect = document.getElementById('exec-district-select');
+            if (execDistrictSelect) {
+                execDistrictSelect.addEventListener('change', renderExecutiveSummary);
+            }
+        });
+
+        function showUnauthorizedMessage(msg) {
+            document.getElementById('unauthorized-msg').innerText = msg;
+            openModal('unauthorized-modal');
+        }
+
+        function selectBuilding(id) {
+            const b = geojsonBuildingList.find(item => item.id === id) || (window.geojsonBuildingsMap ? window.geojsonBuildingsMap[id] : null);
+            if (!b) return;
+            selectedBuildingGlobal = b;
+            const tag = document.getElementById('selected-id-tag');
+            if (tag) tag.innerText = `MAKS: ${b.maks}`;
+
+            const container = document.getElementById('sidebar-detail-content');
+            if (!container) return;
+
+            recordAudit(
+                'BUILDING_VIEW',
+                'Yapı Detayı İncelendi',
+                `MAKS: ${b.maks} (${b.district})`,
+                `${b.district} / ${b.neighborhood} (Ada/Parsel: ${b.parcel || '-'}) yapı kaydı incelendi.`,
+                'success'
+            );
+
+            renderSidebarDetails();
+
+            if (mapInstance && b.latlng) {
+                mapInstance.flyTo(b.latlng, 16, { duration: 1 });
+            }
+        }
+
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+        function switchTebligatTab(tabNum) {
+            for (let i = 1; i <= 3; i++) {
+                const content = document.getElementById(`teb-tab-content-${i}`);
+                const btn = document.getElementById(`teb-tab-btn-${i}`);
+                if (i === tabNum) {
+                    content.classList.remove('hidden');
+                    btn.className = "px-4 py-2 text-xs font-bold rounded-t-xl bg-white text-slate-900 transition flex items-center space-x-1.5 shadow-2xs whitespace-nowrap";
+                } else {
+                    content.classList.add('hidden');
+                    btn.className = "px-4 py-2 text-xs font-semibold rounded-t-xl bg-slate-900 hover:bg-slate-800 text-slate-300 transition flex items-center space-x-1.5 whitespace-nowrap";
+                }
+            }
+            renderTebligatTabsData();
+        }
+
+        function checkIsTebligatCompleted(b) {
+            if (!b.malikler || b.malikler.length === 0) return false;
+            return b.malikler.every(m => m.ulasti === true);
+        }
+
+        function renderTebligatTabsData() {
+            const list = geojsonBuildingList;
+            const validTebleBuildings = list.filter(b => b.stage === 3);
+            const tab1Data = validTebleBuildings.filter(b => !b.tebligatGonderildi);
+            const tab2Data = validTebleBuildings.filter(b => b.tebligatGonderildi && !checkIsTebligatCompleted(b));
+
+            renderTab1Table(tab1Data);
+            renderTab2Table(tab2Data);
+            renderTab3Table(validTebleBuildings);
+        }
+
+        function formatTarihTR(tarihStr) {
+            if (!tarihStr) return '-';
+            const parcalar = tarihStr.split('-');
+            if (parcalar.length !== 3) return tarihStr;
+            return `${parcalar[2]}.${parcalar[1]}.${parcalar[0]}`;
+        }
+
+        function calculateRemainingDays(completionDateStr) {
+            if (!completionDateStr) return null;
+            const compDate = new Date(completionDateStr);
+            const today = new Date();
+            compDate.setHours(0, 0, 0, 0);
+            today.setHours(0, 0, 0, 0);
+
+            if (compDate > today) return 90;
+            const targetDate = new Date(compDate.getTime() + (90 * 24 * 60 * 60 * 1000));
+            targetDate.setHours(0, 0, 0, 0);
+            const diffTime = targetDate - today;
+            let diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+            if (diffDays > 90) diffDays = 90;
+            return diffDays;
+        }
+
+        function renderTab1Table(data) {
+            const tbody = document.getElementById('tbody-tab-1');
+            document.getElementById('count-tab-1').innerText = data.length;
+
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-slate-400">İşleme alınan ve gönderilmemiş bekleyen yapı bulunmuyor.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = data.map(b => {
+                const ulasanSayi = b.malikler ? b.malikler.filter(m => m.ulasti).length : 0;
+                const toplamMalik = b.malikler ? b.malikler.length : (b.malikSayisi || 1);
+                return `
+                    <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                        <td class="p-3 font-bold text-slate-900">${b.maks}</td>
+                        <td class="p-3 text-slate-600">${b.district}</td>
+                        <td class="p-3 font-bold text-teal-700">
+                            <button onclick="openMalikModal(${b.id})" class="hover:underline flex items-center space-x-1">
+                                <span>${ulasanSayi} / ${toplamMalik} Malik</span>
+                                <i class="fa-solid fa-circle-info text-[9px] text-teal-600"></i>
+                            </button>
+                        </td>
+                        <td class="p-3">
+                            <button onclick="viewPdf('https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf', '${b.maks}_tebligat.pdf')" class="bg-white hover:bg-slate-100 text-slate-800 font-semibold px-2.5 py-1 rounded-lg border border-slate-200 transition text-[10px] inline-flex items-center space-x-1 shadow-2xs">
+                                <i class="fa-solid fa-file-pdf"></i><span>PDF</span>
+                            </button>
+                        </td>
+                        <td class="p-3 text-right">
+                            ${b.tebligatGonderildi
+                                ? `<span class="bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-emerald-200 inline-block">Tebligat Yollandı</span>`
+                                : (canUserDo('canSendTebligat')
+                                    ? `<button onclick="handleTekTebligatGonder(${b.id})" class="bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1 rounded-lg text-[10px] font-semibold transition shadow-2xs">Tebligat Gönder</button>`
+                                    : `<span class="bg-slate-100 text-slate-500 px-2.5 py-1 rounded-lg text-[10px] font-semibold border border-slate-200 inline-block">Bekliyor (Salt Okunur)</span>`)
+                            }
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderTab2Table(data) {
+            const tbody = document.getElementById('tbody-tab-2');
+            document.getElementById('count-tab-2').innerText = `${data.length} Yapı`;
+
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-slate-400">Tebligatı yollanmış fakat bekleyen yapı bulunmuyor.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = data.map(b => {
+                const ulasanSayi = b.malikler ? b.malikler.filter(m => m.ulasti).length : 0;
+                const toplamMalik = b.malikler ? b.malikler.length : (b.malikSayisi || 1);
+
+                return `
+                    <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                        <td class="p-3 font-bold text-slate-900">${b.maks}</td>
+                        <td class="p-3 text-slate-600">${b.district}</td>
+                        <td class="p-3 font-bold text-teal-700">${ulasanSayi} / ${toplamMalik} Malik Ulaştı</td>
+                        <td class="p-3 text-right">
+                            <button onclick="openMalikModal(${b.id})" class="bg-teal-50 hover:bg-teal-100 text-teal-800 px-3 py-1.5 rounded-lg text-[10px] font-semibold transition inline-flex items-center space-x-1 border border-teal-200">
+                                <i class="fa-solid fa-users text-[9px]"></i>
+                                <span>Malik Listesi</span>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderTab3Table(validTebleBuildings) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const completed = validTebleBuildings.filter(b => {
+                if (!b.tebligatBitisTarihi) return false;
+                const bDate = new Date(b.tebligatBitisTarihi);
+                bDate.setHours(0, 0, 0, 0);
+                return checkIsTebligatCompleted(b) || bDate <= today;
+            });
+
+            document.getElementById('count-tab-3').innerText = `${completed.length} Yapı`;
+            const tbody = document.getElementById('tbody-tab-3');
+
+            if (completed.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-slate-400">90 günlük yasal süreci başlamış yapı bulunmuyor.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = completed.map(b => {
+                let daysLeft = calculateRemainingDays(b.tebligatBitisTarihi);
+                const formatliTarih = formatTarihTR(b.tebligatBitisTarihi);
+
+                let rowBgClass = 'bg-white hover:bg-slate-50 text-slate-800';
+                let badgeColor = 'bg-teal-100 text-teal-800 border-teal-200';
+                let statusText = `${daysLeft} Gün Kaldı`;
+
+                if (daysLeft < 0) {
+                    rowBgClass = 'bg-purple-600 text-white font-bold hover:bg-purple-700';
+                    badgeColor = 'bg-purple-700 text-white border-purple-500 font-extrabold';
+                    statusText = `Süre Doldu (${Math.abs(daysLeft)} Gün Önce)`;
+                } else if (daysLeft <= 5) {
+                    rowBgClass = 'bg-rose-600 text-white font-semibold hover:bg-rose-700 animate-urgent';
+                    badgeColor = 'bg-rose-700 text-white border-rose-500 font-extrabold';
+                    statusText = `Son 5 Gün (${daysLeft} Gün)`;
+                } else if (daysLeft <= 10) {
+                    rowBgClass = 'bg-amber-300 text-amber-950 font-semibold hover:bg-amber-400';
+                    badgeColor = 'bg-amber-400 text-amber-950 border-amber-500 font-bold';
+                    statusText = `Son 10 Gün (${daysLeft} Gün)`;
+                }
+
+                return `
+                    <tr class="${rowBgClass} transition border-b border-slate-200">
+                        <td class="p-3">
+                            <div class="font-bold">MAKS: ${b.maks}</div>
+                            <div class="text-[10px] opacity-90">${b.district} / ${b.neighborhood}</div>
+                        </td>
+                        <td class="p-3 font-mono text-[10px]">${formatliTarih}</td>
+                        <td class="p-3 font-bold">
+                            <span class="px-2.5 py-1 rounded-lg text-[10px] border ${badgeColor}">
+                                ${statusText}
+                            </span>
+                        </td>
+                        <td class="p-3 text-right">
+                            <button onclick="viewPdf('https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf', '${b.maks}_tebligat_raporu.pdf')" class="bg-white/90 hover:bg-white text-slate-900 font-semibold px-2.5 py-1 rounded-lg border border-slate-300 transition text-[10px] inline-flex items-center space-x-1 shadow-2xs">
+                                <i class="fa-solid fa-file-pdf"></i><span>PDF</span>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function handleTekTebligatGonder(id) {
+            if (!canUserDo('canSendTebligat')) {
+                recordAudit('SECURITY', 'Yetkisiz Tebligat Gönderim Denemesi', `Bina ID: ${id}`, 'Kullanıcının tebligat gönderme yetkisi bulunmuyor.', 'warning');
+                showUnauthorizedMessage('Tebligat gönderme yetkiniz bulunmamaktadır.');
+                return;
+            }
+            const list = geojsonBuildingList;
+            const b = list.find(item => item.id === id);
+            if (!b) return;
+            b.tebligatGonderildi = true;
+            if (window.StorageService) {
+                window.StorageService.saveBuildingOverride(b);
+            }
+            recordAudit(
+                'TEBLIGAT',
+                'Tekil Resmi Tebligat Gönderildi',
+                `MAKS: ${b.maks} (${b.district})`,
+                `${b.district} / ${b.neighborhood} (MAKS: ${b.maks}) yapısı için resmi tebligat gönderildi olarak işaretlendi.`,
+                'success'
+            );
+            showSuccessToast(`MAKS ${b.maks} numaralı yapı için tebligat durumu kaydedildi.`);
+            renderTebligatTabsData();
+        }
+
+        function handleTopluTebligatGonder() {
+            if (!canUserDo('canSendTebligat')) {
+                recordAudit('SECURITY', 'Yetkisiz Toplu Tebligat Denemesi', 'Toplu Tebligat', 'Kullanıcının toplu tebligat gönderme yetkisi bulunmuyor.', 'warning');
+                showUnauthorizedMessage('Toplu tebligat gönderme yetkiniz bulunmamaktadır.');
+                return;
+            }
+            const list = geojsonBuildingList;
+            const activeBuildings = list.filter(b => b.stage === 3 && !b.tebligatGonderildi);
+            if (activeBuildings.length === 0) {
+                alert('Gönderilmemiş bekleyen aktif "İşleme Alındı" yapı bulunmuyor.');
+                return;
+            }
+            activeBuildings.forEach(b => {
+                b.tebligatGonderildi = true;
+                if (window.StorageService) {
+                    window.StorageService.saveBuildingOverride(b);
+                }
+            });
+            recordAudit(
+                'TEBLIGAT',
+                'Toplu Resmi Tebligat Gönderildi',
+                `${activeBuildings.length} Adet Yapı`,
+                `3) İşleme alındı aşamasındaki ${activeBuildings.length} adet yapı için toplu tebligat gönderimi yapıldı.`,
+                'success'
+            );
+            showSuccessToast(`${activeBuildings.length} adet yapı için toplu tebligat durumu kaydedildi.`);
+            renderTebligatTabsData();
+        }
+
+        function openMalikModal(id) {
+            const list = geojsonBuildingList;
+            const b = list.find(item => item.id === id);
+            if (!b) return;
+            const modalBody = document.getElementById('malik-modal-body');
+            document.getElementById('malik-modal-title').innerText = `MAKS ${b.maks} - Kat Malikleri Tebligat Durumu`;
+
+            if (!b.malikler || b.malikler.length === 0) {
+                modalBody.innerHTML = `<div class="text-center py-6 text-slate-400">Bu yapıya ait malik kaydı bulunmuyor.</div>`;
+            } else {
+                modalBody.innerHTML = b.malikler.map((m, idx) => `
+                    <div class="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between shadow-2xs">
+                        <div class="space-y-1">
+                            <div class="font-bold text-slate-900">${idx + 1}. ${m.ad}</div>
+                            <div class="text-slate-500 text-[10px]"><i class="fa-solid fa-location-dot mr-1"></i>${m.adres}</div>
+                            <div class="text-[10px] text-teal-700 font-medium"><i class="fa-solid fa-truck-fast mr-1"></i>Gönderim: ${m.gonderimYeri || 'Yurt İçi'}</div>
+                        </div>
+                        <div>
+                            ${m.ulasti ?
+                        `<span class="bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-emerald-200 inline-flex items-center space-x-1"><i class="fa-solid fa-check"></i><span>Ulaştı</span></span>` :
+                        `<span class="bg-rose-100 text-rose-800 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-rose-200 inline-flex items-center space-x-1"><i class="fa-solid fa-triangle-exclamation"></i><span>Ulaşmadı</span></span>`
+                    }
+                        </div>
+                    </div>
+                `).join('');
+            }
+            openModal('malik-modal');
+        }
+
+        window.activePdfContext = null;
+
+        function openImarPdfModal(id) {
+            const list = geojsonBuildingList;
+            const b = list.find(item => item.id === id);
+            if (!b) return;
+            window.activePdfContext = { type: 'imar', buildingId: b.id };
+            const pdfUrl = b.imarPdf || 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+            const pdfName = b.imarPdfName || `imar_durumu_maks_${b.maks}.pdf`;
+            loadPdfIntoViewer(pdfUrl, pdfName, `İmar Durumu: MAKS ${b.maks}`);
+        }
+
+        function openOnincelemePdfModal(id) {
+            const list = geojsonBuildingList;
+            const b = list.find(item => item.id === id);
+            if (!b) return;
+            window.activePdfContext = { type: 'oninceleme', buildingId: b.id };
+            const pdfUrl = b.onincelemePdf || 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+            const pdfName = b.onincelemePdfName || `oninceleme_raporu_maks_${b.maks}.pdf`;
+            loadPdfIntoViewer(pdfUrl, pdfName, `Öninceleme Raporu: MAKS ${b.maks}`);
+        }
+
+        async function loadPdfIntoViewer(url, fileName, modalTitle) {
+            if (!canUserDo('canViewPdf')) {
+                recordAudit('SECURITY', 'Yetkisiz PDF Görüntüleme Denemesi', fileName, 'Kullanıcının PDF evrak görüntüleme yetkisi bulunmuyor.', 'warning');
+                showUnauthorizedMessage('PDF evraklarını görüntüleme yetkiniz bulunmamaktadır.');
+                return;
+            }
+            const resolvedUrl = window.StorageService ? await window.StorageService.resolvePdfUrl(url) : url;
+            currentPdfUrlGlobal = resolvedUrl;
+            document.getElementById('pdf-file-name-display').innerText = fileName;
+            document.getElementById('pdf-viewer-title').innerText = modalTitle;
+
+            const obj = document.getElementById('pdf-object-frame');
+            obj.setAttribute('data', resolvedUrl);
+
+            const fallbackLink = document.getElementById('pdf-fallback-download-link');
+            if (fallbackLink) fallbackLink.setAttribute('href', resolvedUrl);
+
+            recordAudit('PDF_VIEW', 'PDF Evrak Görüntülendi', modalTitle, `Görüntülenen dosya: ${fileName}`, 'success');
+
+            setupPdfModalAdminArea();
+            openModal('pdf-viewer-modal');
+        }
+
+        function renderStageSpecificFields() {
+            const container = document.getElementById('stage-dynamic-fields');
+            if (!container) return;
+            const s = document.getElementById('update-stage-select')?.value;
+            if (s == '3') {
+                container.innerHTML = `<label class='block font-semibold text-slate-600 mb-1'>İşlem / Ekip Kodu</label><input type='text' id='dyn-ekip-kod' class='w-full bg-white border border-slate-200 rounded p-1.5' placeholder='ISL-35-04'>`;
+            } else if (s == '7') {
+                container.innerHTML = `<label class='block font-semibold text-slate-600 mb-1'>Tebliğ Edilen Kişi / Durum (90 Gün Başlar)</label><input type='text' id='dyn-teblig-kisi' class='w-full bg-white border border-slate-200 rounded p-1.5' placeholder='Malik imzası alındı'>`;
+            } else if (s == '4' || s == '5') {
+                container.innerHTML = `<label class='block font-semibold text-slate-600 mb-1'>Risk Raporu / Karar Sayısı (Sistemden Düşer)</label><input type='text' id='dyn-karar-no' class='w-full bg-white border border-slate-200 rounded p-1.5' placeholder='İzmir BK-2025/12'>`;
+            } else {
+                container.innerHTML = `<p class='text-slate-400'>Ek özel veri gerekmiyor.</p>`;
+            }
+        }
+
+        function viewPdf(url, fileName, contextType, buildingId, timelineIdx) {
+            if (contextType) {
+                window.activePdfContext = { type: contextType, buildingId: buildingId, index: timelineIdx };
+            } else {
+                window.activePdfContext = null;
+            }
+            loadPdfIntoViewer(url, fileName, `Evrak Görüntüleyici: ${fileName}`);
+        }
+
+        function setupPdfModalAdminArea() {
+            const adminArea = document.getElementById('pdf-manager-admin-area');
+            const accessText = document.getElementById('pdf-modal-access-text');
+            if (canUserDo('canUploadPdf')) {
+                adminArea.classList.remove('hidden');
+                accessText.innerText = 'Düzenleyen / Yönetici Yetkisi (Görüntüleme, İndirme ve PDF Düzenleme/Ekleme Aktif)';
+            } else {
+                adminArea.classList.add('hidden');
+                accessText.innerText = 'Görüntüleyen Rolü (Sadece Görüntüleme & İndirme)';
+            }
+        }
+
+        async function handleAdminPdfReplace() {
+            if (!canUserDo('canUploadPdf')) {
+                recordAudit('SECURITY', 'Yetkisiz PDF Yükleme Denemesi', '-', 'Kullanıcının PDF yükleme/değiştirme yetkisi bulunmuyor.', 'warning');
+                showUnauthorizedMessage('PDF evrak yükleme/değiştirme yetkiniz bulunmamaktadır.');
+                return;
+            }
+            const fileInput = document.getElementById('admin-pdf-replace-input');
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                const newName = file.name;
+                const storedKey = window.StorageService ? await window.StorageService.savePdfFile(file) : URL.createObjectURL(file);
+                const resolvedUrl = window.StorageService ? await window.StorageService.resolvePdfUrl(storedKey) : storedKey;
+
+                currentPdfUrlGlobal = resolvedUrl;
+                document.getElementById('pdf-file-name-display').innerText = newName;
+                const obj = document.getElementById('pdf-object-frame');
+                obj.setAttribute('data', resolvedUrl);
+                const fallbackLink = document.getElementById('pdf-fallback-download-link');
+                if (fallbackLink) fallbackLink.setAttribute('href', resolvedUrl);
+
+                // İlgili binanın kaydına da kalıcı olarak işle
+                const ctx = window.activePdfContext;
+                if (ctx && ctx.buildingId !== undefined) {
+                    const b = geojsonBuildingList.find(item => String(item.id) === String(ctx.buildingId));
+                    if (b) {
+                        if (ctx.type === 'timeline' && b.timeline && b.timeline[ctx.index]) {
+                            b.timeline[ctx.index].pdf = storedKey;
+                            b.timeline[ctx.index].pdfName = newName;
+                        } else if (ctx.type === 'imar') {
+                            b.imarPdf = storedKey;
+                            b.imarPdfName = newName;
+                        } else if (ctx.type === 'oninceleme') {
+                            b.onincelemePdf = storedKey;
+                            b.onincelemePdfName = newName;
+                        }
+                        if (window.StorageService) {
+                            window.StorageService.saveBuildingOverride(b);
+                        }
+                        recordAudit(
+                            'PDF_UPLOAD',
+                            'PDF Evrak Güncellendi',
+                            `MAKS: ${b.maks} (${b.district})`,
+                            `Belge Türü: ${ctx.type.toUpperCase()} | Yeni Dosya: ${newName}`,
+                            'success'
+                        );
+                        if (selectedBuildingGlobal && String(selectedBuildingGlobal.id) === String(b.id)) {
+                            renderSidebarDetails();
+                        }
+                    }
+                }
+
+                showSuccessToast(`PDF belgesi kalıcı olarak güncellendi: ${newName}`);
+                fileInput.value = '';
+            } else {
+                alert('Lütfen yüklenecek yeni bir PDF dosyası seçin.');
+            }
+        }
+
+        function renderSearchResults(data) {
+            const container = document.getElementById('search-results-container');
+            document.getElementById('search-result-count').innerText = `${data.length} kayıt`;
+            if (data.length === 0) {
+                container.innerHTML = `<div class="text-center py-6 text-slate-400">Aradığınız kriterlere uygun yapı bulunamadı.</div>`;
+                return;
+            }
+            container.innerHTML = data.map(b => {
+                const stageColor = stageConfig[b.stage] ? stageConfig[b.stage].color : b.color;
+                return `
+                    <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex items-center justify-between text-[11px]">
+                        <div>
+                            <div class="font-bold text-slate-800">MAKS: ${b.maks}</div>
+                            <div class="text-slate-500">${b.district} / ${b.neighborhood} | Yıl: ${b.year || '-'}</div>
+                            <div class="flex items-center space-x-2 mt-1">
+                                <span class="font-semibold text-xs" style="color: ${stageColor};">${b.stageText}</span>
+                                <span class="text-[9px] px-1.5 py-0.5 rounded font-medium ${zoningConfig[b.zoningStatus]?.badge || 'bg-slate-100 text-slate-700'}">${b.zoningStatusText || 'Uygun'}</span>
+                            </div>
+                        </div>
+                        <button onclick="focusBuildingFromSearch(${b.id})" class="bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-[10px] font-medium transition shadow-2xs">
+                            Haritada Göster
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function executeSearch() {
+            const maksVal = document.getElementById('search-maks-input').value.trim().toLowerCase();
+            const parcelVal = document.getElementById('search-parcel-input').value.trim().toLowerCase();
+            const list = geojsonBuildingList;
+            const filtered = list.filter(b => {
+                const matchMaks = maksVal ? (b.maks && b.maks.toString().toLowerCase().includes(maksVal)) : true;
+                const matchParcel = parcelVal ? (b.parcel && b.parcel.toLowerCase().includes(parcelVal)) : true;
+                return matchMaks && matchParcel;
+            });
+            if (maksVal || parcelVal) {
+                recordAudit(
+                    'BUILDING_VIEW',
+                    'Detaylı Bina Sorgulama Yapıldı',
+                    `Sorgu: ${[maksVal ? 'MAKS=' + maksVal : '', parcelVal ? 'Ada/Parsel=' + parcelVal : ''].filter(Boolean).join(', ')}`,
+                    `Arama sonucunda ${filtered.length} kayıt listelendi.`,
+                    'success'
+                );
+            }
+            renderSearchResults(filtered);
+        }
+
+        function focusBuildingFromSearch(id) {
+            closeModal('detailed-search-modal');
+            closeModal('tebligat-modal');
+            selectBuilding(id);
+        }
+
+        function renderAnnouncementsModal() {
+            const container = document.getElementById('announcements-modal-body');
+            const list = geojsonBuildingList;
+            const validTebleBuildings = list.filter(b => b.stage === 3);
+            const criticalBuildings = validTebleBuildings.filter(b => {
+                const isCompleted = checkIsTebligatCompleted(b) || b.tebligatBitisTarihi;
+                if (!isCompleted) return false;
+                const days = calculateRemainingDays(b.tebligatBitisTarihi);
+                return days <= 10;
+            });
+
+            document.getElementById('announcement-badge-count').innerText = criticalBuildings.length + 2;
+
+            let html = '';
+            criticalBuildings.forEach(b => {
+                const days = calculateRemainingDays(b.tebligatBitisTarihi);
+                const isExpired = days < 0;
+                const isRed = days <= 5 && days >= 0;
+                const bgClass = isExpired ? 'bg-purple-50 border-purple-200' : (isRed ? 'bg-rose-50 border-rose-200 animate-urgent' : 'bg-amber-50 border-amber-200');
+
+                html += `
+                    <div class="${bgClass} p-3.5 rounded-xl border shadow-2xs flex items-start justify-between gap-3">
+                        <div class="flex items-start space-x-3">
+                            <div class="p-2 rounded-xl ${isExpired ? 'bg-purple-100 text-purple-600' : (isRed ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600')} mt-0.5 shrink-0">
+                                <i class="fa-solid fa-triangle-exclamation text-base"></i>
+                            </div>
+                            <div class="space-y-1">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-bold text-slate-900 text-xs">MAKS: ${b.maks} (${b.district})</span>
+                                    <span class="${isExpired ? 'bg-purple-200 text-purple-900' : (isRed ? 'bg-rose-200 text-rose-900' : 'bg-amber-200 text-amber-900')} font-extrabold px-2 py-0.5 rounded text-[9px]">
+                                        ${isExpired ? `SÜRE BİTTİ (${days} GÜN)` : (isRed ? 'SON 5 GÜN (KIRMIZI)' : 'SON 10 GÜN (SARI)')}
+                                    </span>
+                                </div>
+                                <p class="text-slate-700 text-[11px]">Tebligat Tamamlanma: <strong>${formatTarihTR(b.tebligatBitisTarihi)}</strong></p>
+                            </div>
+                        </div>
+                        <button onclick="focusBuildingFromAnnouncement(${b.id})" class="bg-slate-900 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shrink-0 shadow-2xs">
+                            İncele
+                        </button>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html || `<div class="text-center py-8 text-slate-400">Şu anda kritik eşikte bildirim bulunmuyor.</div>`;
+        }
+
+        function focusBuildingFromAnnouncement(id) {
+            closeModal('announcements-modal');
+            selectBuilding(id);
+        }
+
+        // --- YÖNETİCİ ÖZETİ SEKME VE SIRALAMA SİSTEMİ ---
+        let currentExecTab = 'stages';
+        let execDistrictSortCriteria = 'total'; // 'total', 'loss', 'zoning'
+
+        function switchExecTab(tabId) {
+            currentExecTab = tabId;
+            const tabs = ['stages', 'zoning', 'loss', 'districts'];
+            tabs.forEach(t => {
+                const btn = document.getElementById('exec-tab-btn-' + t);
+                const content = document.getElementById('exec-tab-content-' + t);
+                if (btn && content) {
+                    if (t === tabId) {
+                        btn.className = "exec-tab-btn px-4 py-2 text-xs font-bold rounded-t-xl bg-white text-slate-900 transition flex items-center space-x-2 shadow-2xs whitespace-nowrap";
+                        content.classList.remove('hidden');
+                    } else {
+                        btn.className = "exec-tab-btn px-4 py-2 text-xs font-semibold rounded-t-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 transition flex items-center space-x-2 whitespace-nowrap";
+                        content.classList.add('hidden');
+                    }
+                }
+            });
+        }
+
+        function focusBuildingFromExecSummary(id) {
+            closeModal('executive-summary-modal');
+            selectBuilding(id);
+        }
+
+        function setExecDistrictSort(criteria) {
+            execDistrictSortCriteria = criteria;
+            renderExecutiveSummary();
+        }
+
+        function renderExecutiveSummary() {
+            const list = geojsonBuildingList;
+            const total = list.length;
+            const totalCountEl = document.getElementById('exec-total-count');
+            const totalCountCenterEl = document.getElementById('exec-total-count-center');
+            if (totalCountEl) totalCountEl.innerText = total;
+            if (totalCountCenterEl) totalCountCenterEl.innerText = total;
+
+            // 1. SÜREÇ KADEMELERİ HESAPLAMALARI
+            const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 7: 0 };
+            list.forEach(b => { if (counts[b.stage] !== undefined) counts[b.stage]++; });
+
+            const stagesArr = Object.entries(stageConfig).map(([id, cfg]) => ({
+                id: parseInt(id),
+                name: cfg.name,
+                color: cfg.color,
+                count: counts[parseInt(id)] || 0,
+                percent: total > 0 ? (((counts[parseInt(id)] || 0) / total) * 100) : 0
+            }));
+
+            // Donut Pie SVG Çizimi (Aşama sırasına göre)
+            const pieSvg = document.getElementById('exec-pie-svg');
+            if (pieSvg) {
+                let cumulativePercent = 0;
+                let svgContent = '';
+                stagesArr.forEach(st => {
+                    const strokeDasharray = `${st.percent} ${100 - st.percent}`;
+                    const strokeDashoffset = -cumulativePercent;
+                    svgContent += `<circle cx="18" cy="18" r="15.9155" fill="none" stroke="${st.color}" stroke-width="4.5" stroke-dasharray="${strokeDasharray}" stroke-dashoffset="${strokeDashoffset}"></circle>`;
+                    cumulativePercent += st.percent;
+                });
+                pieSvg.innerHTML = svgContent;
+            }
+
+            // Kademeleri Yapı Sayısına Göre Büyükten Küçüğe Sıralama
+            const sortedStages = [...stagesArr].sort((a, b) => b.count - a.count);
+
+            const topCardsContainer = document.getElementById('exec-top-cards-container');
+            if (topCardsContainer) {
+                topCardsContainer.innerHTML = sortedStages.map((st, idx) => `
+                    <div class="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200 shadow-2xs hover:border-slate-300 transition">
+                        <div class="flex items-center space-x-2.5 min-w-0">
+                            <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black bg-slate-200 text-slate-700 shrink-0">#${idx + 1}</span>
+                            <span class="w-3 h-3 rounded-full shrink-0" style="background-color: ${st.color};"></span>
+                            <span class="font-bold text-slate-800 text-[11px] truncate">${st.name}</span>
+                        </div>
+                        <div class="flex items-center space-x-2.5 font-bold shrink-0">
+                            <span class="text-xs text-slate-500 font-semibold">%${st.percent.toFixed(1)}</span>
+                            <span class="bg-white px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-black text-slate-900 shadow-2xs">${st.count} Yapı</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // Süreç Kademeleri Karşılaştırma Sıralama Tablosu
+            const stageDescriptions = {
+                1: "Henüz resmi dönüşüm başvurusu veya tespiti yapılmamış yapılar",
+                2: "Resmi tebligat süreci başlatılan ve maliklere bildirim yapılan aşama",
+                3: "Riskli yapı tespiti kesinleşen ve şerh düşülen binalar",
+                4: "Malikler arası anlaşma ve dönüşüm uygulama projesi hazırlığı",
+                5: "Belediye ve ilgili idarelerden ruhsat alım aşaması",
+                7: "Tahliyesi tamamlanıp sahada fiili yıkımı gerçekleştirilen yapılar"
+            };
+
+            const stagesTbody = document.getElementById('exec-stages-ranking-tbody');
+            if (stagesTbody) {
+                stagesTbody.innerHTML = sortedStages.map((st, idx) => `
+                    <tr class="hover:bg-slate-50/80 transition">
+                        <td class="p-2.5 text-center font-bold text-slate-400">#${idx + 1}</td>
+                        <td class="p-2.5">
+                            <div class="flex items-center space-x-2 font-bold text-slate-800">
+                                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${st.color};"></span>
+                                <span>${st.name}</span>
+                            </div>
+                        </td>
+                        <td class="p-2.5 text-right font-black text-slate-900 text-xs">${st.count} Yapı</td>
+                        <td class="p-2.5">
+                            <div class="flex items-center space-x-2">
+                                <div class="w-24 bg-slate-200 h-2 rounded-full overflow-hidden">
+                                    <div class="h-2 rounded-full transition-all duration-500" style="width: ${st.percent}%; background-color: ${st.color};"></div>
+                                </div>
+                                <span class="text-[10px] font-bold text-slate-600">%${st.percent.toFixed(1)}</span>
+                            </div>
+                        </td>
+                        <td class="p-2.5 text-slate-500 text-[10.5px]">${stageDescriptions[st.id] || '-'}</td>
+                    </tr>
+                `).join('');
+            }
+
+            // 2. İMAR DURUMU VE UYUMSUZLUK SIRALAMALARI
+            const zCounts = {
+                'uygun': 0,
+                'yola_kaldirima_tasma': 0,
+                'yan_parsellere_tasma': 0,
+                'cekme_mesafesi_ihlali': 0,
+                'donati_alani_icerisinde': 0,
+                'yol_uzerinde': 0
+            };
+            list.forEach(b => {
+                const zKey = b.zoningStatus || 'uygun';
+                if (zCounts[zKey] !== undefined) zCounts[zKey]++;
+                else zCounts['uygun']++;
+            });
+
+            const zoningTotalText = document.getElementById('exec-zoning-total-text');
+            if (zoningTotalText) zoningTotalText.innerText = total;
+
+            const greenCount = zCounts['uygun'] || 0;
+            const yellowCount = (zCounts['yola_kaldirima_tasma'] || 0) + (zCounts['yan_parsellere_tasma'] || 0) + (zCounts['cekme_mesafesi_ihlali'] || 0);
+            const redCount = (zCounts['yol_uzerinde'] || 0) + (zCounts['donati_alani_icerisinde'] || 0);
+
+            const greenPercent = total > 0 ? ((greenCount / total) * 100).toFixed(1) : '0.0';
+            const yellowPercent = total > 0 ? ((yellowCount / total) * 100).toFixed(1) : '0.0';
+            const redPercent = total > 0 ? ((redCount / total) * 100).toFixed(1) : '0.0';
+
+            const zoningGroupsContainer = document.getElementById('exec-zoning-groups-summary');
+            if (zoningGroupsContainer) {
+                zoningGroupsContainer.innerHTML = `
+                    <div class="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 flex flex-col justify-between shadow-2xs">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-emerald-950 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-circle-check text-emerald-600 text-sm"></i>
+                                <span>İmar Durumu Uygun</span>
+                            </span>
+                            <span class="bg-emerald-200/80 text-emerald-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full">%${greenPercent}</span>
+                        </div>
+                        <div class="flex items-baseline justify-between mt-1">
+                            <span class="text-2xl font-black text-emerald-950">${greenCount} <span class="text-xs font-normal text-emerald-700">Yapı</span></span>
+                            <span class="text-[10px] text-emerald-700 font-medium">Doğrudan Dönüşüme Uygun</span>
+                        </div>
+                        <div class="w-full bg-emerald-200/60 h-1.5 rounded-full mt-2.5 overflow-hidden">
+                            <div class="bg-emerald-600 h-1.5 rounded-full transition-all duration-500" style="width: ${greenPercent}%"></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 flex flex-col justify-between shadow-2xs">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-amber-950 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-ruler-combined text-amber-600 text-sm"></i>
+                                <span>Taşma & Çekme İhlali</span>
+                            </span>
+                            <span class="bg-amber-200/80 text-amber-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full">%${yellowPercent}</span>
+                        </div>
+                        <div class="flex items-baseline justify-between mt-1">
+                            <span class="text-2xl font-black text-amber-950">${yellowCount} <span class="text-xs font-normal text-amber-700">Yapı</span></span>
+                            <span class="text-[10px] text-amber-700 font-medium">Teknik/Mekânsal Düzenleme</span>
+                        </div>
+                        <div class="w-full bg-amber-200/60 h-1.5 rounded-full mt-2.5 overflow-hidden">
+                            <div class="bg-amber-500 h-1.5 rounded-full transition-all duration-500" style="width: ${yellowPercent}%"></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-rose-50/70 border border-rose-200 rounded-xl p-3.5 flex flex-col justify-between shadow-2xs">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-bold text-rose-950 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-triangle-exclamation text-rose-600 text-sm"></i>
+                                <span>Yol Üzerinde & Donatı</span>
+                            </span>
+                            <span class="bg-rose-200/80 text-rose-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full">%${redPercent}</span>
+                        </div>
+                        <div class="flex items-baseline justify-between mt-1">
+                            <span class="text-2xl font-black text-rose-950">${redCount} <span class="text-xs font-normal text-rose-700">Yapı</span></span>
+                            <span class="text-[10px] text-rose-700 font-medium">Kamu/Donatı Tasfiyesi Gerektirir</span>
+                        </div>
+                        <div class="w-full bg-rose-200/60 h-1.5 rounded-full mt-2.5 overflow-hidden">
+                            <div class="bg-rose-600 h-1.5 rounded-full transition-all duration-500" style="width: ${redPercent}%"></div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 6 İmar Notu Kategorisini Sayısına Göre Büyükten Küçüğe Sıralama
+            const sortedZoning = Object.entries(zoningConfig).map(([key, cfg]) => {
+                const count = zCounts[key] || 0;
+                const percent = total > 0 ? ((count / total) * 100) : 0;
+                return { key, cfg, count, percent };
+            }).sort((a, b) => b.count - a.count);
+
+            const zoningDetailsContainer = document.getElementById('exec-zoning-details-container');
+            if (zoningDetailsContainer) {
+                zoningDetailsContainer.innerHTML = sortedZoning.map((item, idx) => `
+                    <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 hover:border-slate-300 transition flex flex-col justify-between space-y-2">
+                        <div class="flex items-start justify-between gap-1.5">
+                            <div class="flex items-center space-x-2 min-w-0">
+                                <span class="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black bg-slate-200 text-slate-700 shrink-0">#${idx + 1}</span>
+                                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${item.cfg.color};"></span>
+                                <span class="font-bold text-slate-800 text-[11px] truncate" title="${item.cfg.name}">${item.cfg.name}</span>
+                            </div>
+                            <i class="fa-solid ${item.cfg.icon} text-slate-400 text-xs shrink-0"></i>
+                        </div>
+                        <div class="space-y-1">
+                            <div class="flex items-center justify-between text-[10px]">
+                                <span class="text-slate-500 font-medium">%${item.percent.toFixed(1)}</span>
+                                <span class="font-extrabold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs">${item.count} Yapı</span>
+                            </div>
+                            <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                <div class="h-1.5 rounded-full transition-all duration-500" style="width: ${item.percent}%; background-color: ${item.cfg.color};"></div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            const zoningImpacts = {
+                'uygun': { risk: 'Düşük Risk (Uygun)', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200', desc: 'Doğrudan dönüşüme uygun, herhangi bir kısıt veya kamusal terk bulunmuyor.' },
+                'donati_alani_icerisinde': { risk: 'Yüksek Risk (Kırmızı)', badge: 'bg-rose-100 text-rose-800 border-rose-200', desc: 'Park, okul, sağlık ocağı vb. kamu donatısında kaldığından kamulaştırma/tasfiye gerektirir.' },
+                'yol_uzerinde': { risk: 'Yüksek Risk (Kırmızı)', badge: 'bg-rose-100 text-rose-800 border-rose-200', desc: 'Fiilen imar yolu güzergahında kalmaktadır, yola terk işlemi zorunludur.' },
+                'yan_parsellere_tasma': { risk: 'Orta Risk (Sarı)', badge: 'bg-amber-100 text-amber-800 border-amber-200', desc: 'Komşu parsel sınırlarına tecavüzlüdür, şuyulandırma veya tevhit gerektirebilir.' },
+                'yola_kaldirima_tasma': { risk: 'Orta Risk (Sarı)', badge: 'bg-amber-100 text-amber-800 border-amber-200', desc: 'Yol/kaldırım cephesinde tecavüz bulunmaktadır, imar hattına çekilmelidir.' },
+                'cekme_mesafesi_ihlali': { risk: 'Orta Risk (Sarı)', badge: 'bg-amber-100 text-amber-800 border-amber-200', desc: 'Ön/yan bahçe çekme mesafesini ihlal etmektedir, yeni projede çekme şartı aranır.' }
+            };
+
+            const zoningRankingTbody = document.getElementById('exec-zoning-ranking-tbody');
+            if (zoningRankingTbody) {
+                zoningRankingTbody.innerHTML = sortedZoning.map((item, idx) => {
+                    const impact = zoningImpacts[item.key] || { risk: 'Belirsiz', badge: 'bg-slate-100 text-slate-700 border-slate-200', desc: '-' };
+                    return `
+                        <tr class="hover:bg-slate-50/80 transition">
+                            <td class="p-2.5 text-center font-bold text-slate-400">#${idx + 1}</td>
+                            <td class="p-2.5">
+                                <div class="flex items-center space-x-2 font-bold text-slate-800">
+                                    <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${item.cfg.color};"></span>
+                                    <span>${item.cfg.name}</span>
+                                </div>
+                            </td>
+                            <td class="p-2.5 text-center">
+                                <span class="px-2 py-0.5 rounded-full text-[9px] font-bold border ${impact.badge}">${impact.risk}</span>
+                            </td>
+                            <td class="p-2.5 text-right font-black text-slate-900 text-xs">${item.count} Yapı</td>
+                            <td class="p-2.5">
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-24 bg-slate-200 h-2 rounded-full overflow-hidden">
+                                        <div class="h-2 rounded-full transition-all duration-500" style="width: ${item.percent}%; background-color: ${item.cfg.color};"></div>
+                                    </div>
+                                    <span class="text-[10px] font-bold text-slate-600">%${item.percent.toFixed(1)}</span>
+                                </div>
+                            </td>
+                            <td class="p-2.5 text-slate-500 text-[10.5px]">${impact.desc}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            // 3. HAK KAYBI ANALİZİ (YAPI ALANI DURUMU) HESAPLAMALARI
+            const lossBuildings = [];
+            let totalLossM2 = 0;
+            const districtLossStats = {};
+
+            list.forEach(b => {
+                const distName = b.district || 'Bilinmiyor';
+                if (!districtLossStats[distName]) {
+                    districtLossStats[distName] = { total: 0, lossCount: 0, totalDiff: 0 };
+                }
+                districtLossStats[distName].total++;
+
+                const m = (b.mevcutYapiAlani !== null && b.mevcutYapiAlani !== undefined) ? Number(b.mevcutYapiAlani) : 0;
+                const a = (b.artisliImarAlani !== null && b.artisliImarAlani !== undefined) ? Number(b.artisliImarAlani) : 0;
+                const mi = (b.mevcutImarAlani !== null && b.mevcutImarAlani !== undefined) ? Number(b.mevcutImarAlani) : 0;
+
+                if (m > a) {
+                    const diff = m - a;
+                    totalLossM2 += diff;
+                    districtLossStats[distName].lossCount++;
+                    districtLossStats[distName].totalDiff += diff;
+
+                    lossBuildings.push({
+                        id: b.id,
+                        district: b.district,
+                        neighborhood: b.neighborhood,
+                        parcel: b.parcel,
+                        mevcut: m,
+                        mevcutImar: mi,
+                        artisli: a,
+                        diff: diff
+                    });
+                }
+            });
+
+            // En çok hak kaybı yaşayan binaları büyükten küçüğe sırala
+            lossBuildings.sort((a, b) => b.diff - a.diff);
+
+            const lossCount = lossBuildings.length;
+            const noLossCount = total - lossCount;
+            const lossPercent = total > 0 ? ((lossCount / total) * 100).toFixed(1) : '0.0';
+            const noLossPercent = total > 0 ? ((noLossCount / total) * 100).toFixed(1) : '0.0';
+            const avgLossM2 = lossCount > 0 ? (totalLossM2 / lossCount).toFixed(1) : '0.0';
+
+            // Hak Kaybı KPI Kartları
+            const lossKpiContainer = document.getElementById('exec-loss-kpi-container');
+            if (lossKpiContainer) {
+                lossKpiContainer.innerHTML = `
+                    <div class="bg-rose-50/70 border border-rose-200 rounded-xl p-3.5 flex flex-col justify-between shadow-2xs">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-bold text-rose-950 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-triangle-exclamation text-rose-600"></i>
+                                <span>Hak Kaybı Yaşayanlar</span>
+                            </span>
+                            <span class="bg-rose-200/80 text-rose-900 text-[10px] font-black px-2 py-0.5 rounded-full">%${lossPercent}</span>
+                        </div>
+                        <div class="mt-1">
+                            <span class="text-2xl font-black text-rose-950">${lossCount} <span class="text-xs font-medium text-rose-700">Yapı</span></span>
+                        </div>
+                        <p class="text-[10px] text-rose-700/90 mt-1">Mevcut Yapı Alanı > Artışlı İmar Alanı</p>
+                    </div>
+
+                    <div class="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 flex flex-col justify-between shadow-2xs">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-bold text-emerald-950 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-circle-check text-emerald-600"></i>
+                                <span>Hak Kaybı Yaşamayanlar</span>
+                            </span>
+                            <span class="bg-emerald-200/80 text-emerald-900 text-[10px] font-black px-2 py-0.5 rounded-full">%${noLossPercent}</span>
+                        </div>
+                        <div class="mt-1">
+                            <span class="text-2xl font-black text-emerald-950">${noLossCount} <span class="text-xs font-medium text-emerald-700">Yapı</span></span>
+                        </div>
+                        <p class="text-[10px] text-emerald-700/90 mt-1">Artışlı İmar Alanı >= Mevcut Alan</p>
+                    </div>
+
+                    <div class="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 flex flex-col justify-between shadow-2xs">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-bold text-amber-950 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-ruler-combined text-amber-600"></i>
+                                <span>Toplam Hak Kaybı (m²)</span>
+                            </span>
+                            <span class="bg-amber-200/80 text-amber-900 text-[9px] font-bold px-1.5 py-0.5 rounded-full">Kümülatif</span>
+                        </div>
+                        <div class="mt-1">
+                            <span class="text-xl font-black text-amber-950">${Number(totalLossM2.toFixed(1)).toLocaleString('tr-TR')} <span class="text-xs font-medium text-amber-700">m²</span></span>
+                        </div>
+                        <p class="text-[10px] text-amber-700/90 mt-1">İl geneli toplam alan açığı</p>
+                    </div>
+
+                    <div class="bg-slate-100 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between shadow-2xs">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                                <i class="fa-solid fa-calculator text-teal-600"></i>
+                                <span>Ortalama Hak Kaybı</span>
+                            </span>
+                            <span class="bg-slate-200 text-slate-800 text-[9px] font-bold px-1.5 py-0.5 rounded-full">Yapı Başına</span>
+                        </div>
+                        <div class="mt-1">
+                            <span class="text-xl font-black text-slate-900">${Number(avgLossM2).toLocaleString('tr-TR')} <span class="text-xs font-medium text-slate-600">m²</span></span>
+                        </div>
+                        <p class="text-[10px] text-slate-500 mt-1">Kayıp yaşayan yapı başına ortalama</p>
+                    </div>
+                `;
+            }
+
+            // Top 15 Hak Kaybı Yaşayan Yapılar Tablosu
+            const lossTopTbody = document.getElementById('exec-loss-top-tbody');
+            if (lossTopTbody) {
+                const top15 = lossBuildings.slice(0, 15);
+                lossTopTbody.innerHTML = top15.map((item, idx) => `
+                    <tr class="hover:bg-rose-50/40 transition">
+                        <td class="p-2.5 text-center font-bold text-rose-500">#${idx + 1}</td>
+                        <td class="p-2.5 font-bold text-slate-800">
+                            <div>${item.district}</div>
+                            <div class="text-[9.5px] font-normal text-slate-400">${item.neighborhood}</div>
+                        </td>
+                        <td class="p-2.5 font-semibold text-slate-700">${item.parcel || '-'}</td>
+                        <td class="p-2.5 text-right font-medium text-slate-700">${item.mevcut.toLocaleString('tr-TR')} m²</td>
+                        <td class="p-2.5 text-right font-medium text-slate-500">${item.mevcutImar ? item.mevcutImar.toLocaleString('tr-TR') + ' m²' : '-'}</td>
+                        <td class="p-2.5 text-right font-medium text-slate-700">${item.artisli.toLocaleString('tr-TR')} m²</td>
+                        <td class="p-2.5 text-right font-black text-rose-600">
+                            <span class="bg-rose-100 text-rose-800 px-2 py-0.5 rounded-md border border-rose-200 font-extrabold text-[10.5px]">
+                                -${Number(item.diff.toFixed(2)).toLocaleString('tr-TR')} m²
+                            </span>
+                        </td>
+                        <td class="p-2.5 text-center">
+                            <button onclick="focusBuildingFromExecSummary(${item.id})"
+                                class="bg-slate-900 hover:bg-teal-700 text-white px-2.5 py-1 rounded-lg text-[9.5px] font-bold transition flex items-center space-x-1 mx-auto shadow-2xs">
+                                <i class="fa-solid fa-location-crosshairs text-[9px]"></i>
+                                <span>İncele</span>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            // İlçe Bazında Hak Kaybı Sıralaması Grid
+            const lossDistrictsGrid = document.getElementById('exec-loss-districts-grid');
+            if (lossDistrictsGrid) {
+                const sortedLossDistricts = Object.entries(districtLossStats)
+                    .map(([name, stat]) => ({
+                        name,
+                        total: stat.total,
+                        lossCount: stat.lossCount,
+                        lossPercent: stat.total > 0 ? ((stat.lossCount / stat.total) * 100) : 0,
+                        totalDiff: stat.totalDiff
+                    }))
+                    .sort((a, b) => b.lossCount - a.lossCount);
+
+                lossDistrictsGrid.innerHTML = sortedLossDistricts.map((d, idx) => `
+                    <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 hover:border-slate-300 transition flex flex-col justify-between space-y-1.5">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                                <span class="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black bg-slate-200 text-slate-700">#${idx + 1}</span>
+                                <span class="font-bold text-slate-800 text-[11px]">${d.name}</span>
+                            </div>
+                            <span class="text-[10px] font-bold ${d.lossCount > 0 ? 'text-rose-600 bg-rose-50 border border-rose-200' : 'text-slate-400 bg-slate-100'} px-1.5 py-0.5 rounded">
+                                ${d.lossCount} / ${d.total} Yapı
+                            </span>
+                        </div>
+                        <div>
+                            <div class="flex items-center justify-between text-[10px] text-slate-500 mb-1">
+                                <span>Hak Kaybı Oranı: <strong class="text-slate-800">%${d.lossPercent.toFixed(1)}</strong></span>
+                                <span>${Number(d.totalDiff.toFixed(0)).toLocaleString('tr-TR')} m² açık</span>
+                            </div>
+                            <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                <div class="h-1.5 rounded-full transition-all duration-500 ${d.lossPercent > 50 ? 'bg-rose-500' : 'bg-amber-500'}" style="width: ${d.lossPercent}%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // 4. İLÇE SIRALAMALARI & KARŞILAŞTIRMA
+            const distAggregates = {};
+            list.forEach(b => {
+                const dName = b.district || 'Bilinmiyor';
+                if (!distAggregates[dName]) {
+                    distAggregates[dName] = {
+                        name: dName,
+                        total: 0,
+                        lossCount: 0,
+                        zoningRiskCount: 0,
+                        stageCounts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 7: 0 }
+                    };
+                }
+                const distObj = distAggregates[dName];
+                distObj.total++;
+                if (distObj.stageCounts[b.stage] !== undefined) distObj.stageCounts[b.stage]++;
+
+                const m = (b.mevcutYapiAlani !== null && b.mevcutYapiAlani !== undefined) ? Number(b.mevcutYapiAlani) : 0;
+                const a = (b.artisliImarAlani !== null && b.artisliImarAlani !== undefined) ? Number(b.artisliImarAlani) : 0;
+                if (m > a) distObj.lossCount++;
+
+                const zCol = getZoningColor(b.zoningStatus);
+                if (zCol !== '#22c55e') distObj.zoningRiskCount++;
+            });
+
+            const distList = Object.values(distAggregates).map(d => {
+                let dominantStage = 1;
+                let maxStageCount = -1;
+                Object.entries(d.stageCounts).forEach(([stId, stCount]) => {
+                    if (stCount > maxStageCount) {
+                        maxStageCount = stCount;
+                        dominantStage = parseInt(stId);
+                    }
+                });
+                return {
+                    ...d,
+                    sharePercent: total > 0 ? ((d.total / total) * 100) : 0,
+                    lossPercent: d.total > 0 ? ((d.lossCount / d.total) * 100) : 0,
+                    zoningRiskPercent: d.total > 0 ? ((d.zoningRiskCount / d.total) * 100) : 0,
+                    dominantStage: dominantStage
+                };
+            });
+
+            // Sıralama Kriterine Göre Sırala
+            if (execDistrictSortCriteria === 'loss') {
+                distList.sort((a, b) => b.lossPercent - a.lossPercent || b.lossCount - a.lossCount);
+            } else if (execDistrictSortCriteria === 'zoning') {
+                distList.sort((a, b) => b.zoningRiskPercent - a.zoningRiskPercent || b.zoningRiskCount - a.zoningRiskCount);
+            } else {
+                distList.sort((a, b) => b.total - a.total);
+            }
+
+            // Buton aktiflik sınıflarını güncelle
+            ['total', 'loss', 'zoning'].forEach(c => {
+                const btn = document.getElementById('btn-dist-sort-' + c);
+                if (btn) {
+                    if (c === execDistrictSortCriteria) {
+                        btn.className = "px-2.5 py-1 text-[10px] font-bold rounded-md bg-white text-slate-900 shadow-2xs transition";
+                    } else {
+                        btn.className = "px-2.5 py-1 text-[10px] font-semibold rounded-md text-slate-600 hover:text-slate-900 transition";
+                    }
+                }
+            });
+
+            // İlçe Sıralama Tablosunu Render Et
+            const distTbody = document.getElementById('exec-districts-ranking-tbody');
+            if (distTbody) {
+                distTbody.innerHTML = distList.map((d, idx) => {
+                    const stageCfg = stageConfig[d.dominantStage] || stageConfig[1];
+                    return `
+                        <tr class="hover:bg-slate-50/80 transition">
+                            <td class="p-2.5 text-center font-bold text-slate-400">#${idx + 1}</td>
+                            <td class="p-2.5 font-bold text-slate-900">
+                                <div class="flex items-center space-x-1.5">
+                                    <i class="fa-solid fa-location-dot text-teal-600 text-xs"></i>
+                                    <span>${d.name}</span>
+                                </div>
+                            </td>
+                            <td class="p-2.5 text-right font-black text-slate-900 text-xs">${d.total} Yapı</td>
+                            <td class="p-2.5">
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-20 bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                        <div class="bg-teal-600 h-1.5 rounded-full" style="width: ${d.sharePercent}%;"></div>
+                                    </div>
+                                    <span class="text-[10px] font-bold text-slate-600">%${d.sharePercent.toFixed(1)}</span>
+                                </div>
+                            </td>
+                            <td class="p-2.5 text-right">
+                                <span class="font-bold ${d.lossCount > 0 ? 'text-rose-700 bg-rose-50 border border-rose-200' : 'text-slate-400 bg-slate-50'} px-2 py-0.5 rounded text-[10px]">
+                                    ${d.lossCount} (%${d.lossPercent.toFixed(1)})
+                                </span>
+                            </td>
+                            <td class="p-2.5 text-right">
+                                <span class="font-bold ${d.zoningRiskCount > 0 ? 'text-amber-700 bg-amber-50 border border-amber-200' : 'text-emerald-700 bg-emerald-50'} px-2 py-0.5 rounded text-[10px]">
+                                    ${d.zoningRiskCount} (%${d.zoningRiskPercent.toFixed(1)})
+                                </span>
+                            </td>
+                            <td class="p-2.5">
+                                <span class="px-2 py-0.5 rounded-full text-[9.5px] font-bold text-slate-800" style="background-color: ${stageCfg.color}22; color: ${stageCfg.color}; border: 1px solid ${stageCfg.color}44;">
+                                    ${stageCfg.name}
+                                </span>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            // Tekil İlçe Seçici & Detay Görünümü
+            const distSelect = document.getElementById('exec-district-select');
+            if (distSelect) {
+                const districts = [...new Set(list.map(b => b.district))].sort();
+                const currentSelectedDist = distSelect.value;
+                distSelect.innerHTML = `<option value="all">Tüm İlçeler</option>` + districts.map(d => `<option value="${d}">${d}</option>`).join('');
+                distSelect.value = currentSelectedDist;
+
+                const selectedDist = distSelect.value;
+                const filteredDistBuildings = selectedDist === 'all' ? list : list.filter(b => b.district === selectedDist);
+                const distSummaryContainer = document.getElementById('exec-district-summary');
+
+                const distGroups = {};
+                filteredDistBuildings.forEach(b => {
+                    if (!distGroups[b.district]) distGroups[b.district] = [];
+                    distGroups[b.district].push(b);
+                });
+
+                if (Object.keys(distGroups).length === 0) {
+                    distSummaryContainer.innerHTML = `<div class="text-center py-6 text-slate-400">Bu ilçede kayıtlı yapı bulunamadı.</div>`;
+                    return;
+                }
+
+                let distHtml = '';
+                for (const [distName, bList] of Object.entries(distGroups)) {
+                    const distTotal = bList.length;
+                    const dCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 7: 0 };
+                    const dZoningCounts = { green: 0, yellow: 0, red: 0 };
+                    let dLossCount = 0;
+
+                    bList.forEach(b => {
+                        if (dCounts[b.stage] !== undefined) dCounts[b.stage]++;
+                        const zCol = getZoningColor(b.zoningStatus);
+                        if (zCol === '#22c55e') dZoningCounts.green++;
+                        else if (zCol === '#ef4444') dZoningCounts.red++;
+                        else dZoningCounts.yellow++;
+
+                        const m = (b.mevcutYapiAlani !== null && b.mevcutYapiAlani !== undefined) ? Number(b.mevcutYapiAlani) : 0;
+                        const a = (b.artisliImarAlani !== null && b.artisliImarAlani !== undefined) ? Number(b.artisliImarAlani) : 0;
+                        if (m > a) dLossCount++;
+                    });
+
+                    distHtml += `
+                        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-2 gap-2">
+                                <h5 class="font-bold text-slate-900 text-xs flex items-center space-x-1.5">
+                                    <i class="fa-solid fa-location-dot text-teal-600"></i>
+                                    <span>${distName} İlçesi (${distTotal} Yapı)</span>
+                                </h5>
+                                <div class="flex flex-wrap items-center gap-1.5 text-[10px]">
+                                    <!-- Hak Kaybı Rozeti -->
+                                    <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md font-bold ${dLossCount > 0 ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-slate-100 text-slate-600'}">
+                                        <i class="fa-solid fa-triangle-exclamation text-[9px]"></i>
+                                        <span>${dLossCount} Hak Kaybı</span>
+                                    </span>
+                                    <!-- İmar Durumu Özeti -->
+                                    <div class="flex items-center space-x-2 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
+                                        <span class="inline-flex items-center space-x-1 text-emerald-700 font-bold">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                            <span>${dZoningCounts.green} Uygun</span>
+                                        </span>
+                                        <span class="text-slate-300">|</span>
+                                        <span class="inline-flex items-center space-x-1 text-amber-700 font-bold">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                            <span>${dZoningCounts.yellow} İhlal</span>
+                                        </span>
+                                        <span class="text-slate-300">|</span>
+                                        <span class="inline-flex items-center space-x-1 text-rose-700 font-bold">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                            <span>${dZoningCounts.red} Yol/Donatı</span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5">
+                                ${stagesArr.map(st => `
+                                    <div class="flex items-center justify-between bg-white p-1.5 rounded border border-slate-100 text-[10px]">
+                                        <span class="text-slate-600 font-medium">${st.name}</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-slate-800" style="background-color: ${st.color}22; color: ${st.color};">${dCounts[st.id]} Yapı</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                distSummaryContainer.innerHTML = distHtml;
+            }
+        }
+    </script>
+</body>
+
+</html>
